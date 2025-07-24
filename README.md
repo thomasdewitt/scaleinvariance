@@ -20,7 +20,7 @@ All methods support multi-dimensional arrays and return uncertainty estimates.
 ## Installation
 
 ```bash
-pip install -e .
+pip install scaleinvariance
 ```
 
 ## Basic Usage
