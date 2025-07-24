@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from scaleinvariance import acausal_fBm, structure_function_hurst, haar_fluctuation_hurst, spectral_hurst
+from scaleinvariance import acausal_fBm_1D, structure_function_hurst, haar_fluctuation_hurst, spectral_hurst
 
 if len(sys.argv) != 2:
     print("Usage: python test_acausal_fBm_hurst_estimation.py <H>")
@@ -13,8 +13,8 @@ print(f"Testing fBm with H = {H}")
 
 # Generate fBm - create 2D array with 2 time series
 size = 2**20
-fBm1 = acausal_fBm(size, H)
-fBm2 = acausal_fBm(size, H)
+fBm1 = acausal_fBm_1D(size, H)
+fBm2 = acausal_fBm_1D(size, H)
 fBm = np.stack([fBm1, fBm2], axis=0)
 print(f"Generated 2D fBm array with shape: {fBm.shape}")
 

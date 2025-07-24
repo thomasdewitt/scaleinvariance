@@ -9,7 +9,7 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
     """
     Calculate the mean absolute Haar fluctuation for regularly spaced scalar data along a given axis.
 
-    Uses PyTorch convolution for efficient computation.
+    Uses scipy.signal.convolve for efficient computation with BLAS parallelization.
     
     Parameters
     -----------
@@ -89,16 +89,16 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         kernel = kernel.reshape(kernel_shape)
 
         # Convolution using scipy (parallelized with BLAS)
-        conv = convolve(data, kernel, mode='valid', method=conv_method)
+        abs_conv = np.abs(convolve(data, kernel, mode='valid', method=conv_method))
 
-        if (conv.size == 0) or np.all(np.isnan(conv)):
+        if (abs_conv.size == 0) or np.all(np.isnan(abs_conv)):
             haar_flucs.append(np.nan)
             continue
         
         if order != 1:
-            conv = conv**order
+            abs_conv = abs_conv**order
 
-        mean_absolute_haar_fluctuation = np.nanmean(np.abs(conv))
+        mean_absolute_haar_fluctuation = np.nanmean(abs_conv)
         haar_flucs.append(mean_absolute_haar_fluctuation)
 
     return np.array(lags), np.array(haar_flucs)

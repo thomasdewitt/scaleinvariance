@@ -5,4 +5,4 @@ Contains methods for generating synthetic multifractal time series and fields.
 """
 
 from .FIF import fractionally_integrated_flux
-from .fbm import fractional_brownian_motion, acausal_fBm
+from .fbm import fractional_brownian_motion, acausal_fBm_1D, acausal_fBm_2D

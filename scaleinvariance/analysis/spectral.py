@@ -36,7 +36,7 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
     n = data.shape[axis]
     # Compute the one-sided FFT and corresponding power spectral density along specified axis
     fft_vals = np.fft.rfft(data, axis=axis)
-    psd = np.abs(fft_vals)**2
+    psd = np.abs(fft_vals)**2 / n
     
     # Average PSD across other dimensions
     avg_axes = tuple(i for i in range(data.ndim) if i != axis)
