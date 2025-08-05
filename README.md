@@ -7,10 +7,12 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 ## Current Features
 
 ### Simulation
+
 - **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
 - **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
 
 ### Hurst Exponent Estimation
+
 - **Haar fluctuation method**: `haar_fluctuation_hurst()`
 - **Structure function method**: `structure_function_hurst()`  
 - **Spectral method**: `spectral_hurst()`
@@ -48,6 +50,12 @@ python tests/test_acausal_fBm_hurst_estimation.py 0.7
 # Test 2D fBm with isotropy validation
 python tests/test_2d_fbm.py 0.7
 ```
+
+## Examples
+
+data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
+
+
 
 ## Planned Features
 

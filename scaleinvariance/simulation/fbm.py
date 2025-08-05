@@ -118,7 +118,3 @@ def acausal_fBm_2D(size, H):
     fBm_2D = torch.fft.irfft2(complex_amplitudes, s=(nx, ny))
     
     return (fBm_2D - torch.mean(fBm_2D)).cpu().numpy()
-
-
-def fractional_brownian_motion(n_points, hurst, **kwargs):
-    raise NotImplementedError
