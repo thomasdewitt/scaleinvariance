@@ -1,6 +1,6 @@
 # ScaleInvariance
 
-⚠️ **This package is under active development. Current functionality is limited to Hurst exponent estimation and fractional Brownian motion simulation.**
+⚠️ **This package is under active development.**
 
 Simulation and analysis tools for scale-invariant processes and multifractal fields.
 
@@ -10,6 +10,7 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 
 - **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
 - **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
+- **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation
 
 ### Hurst Exponent Estimation
 
@@ -28,13 +29,16 @@ pip install scaleinvariance
 ## Basic Usage
 
 ```python
-from scaleinvariance import acausal_fBm_1D, acausal_fBm_2D, haar_fluctuation_hurst
+from scaleinvariance import acausal_fBm_1D, acausal_fBm_2D, FIF_1D, haar_fluctuation_hurst
 
 # Generate 1D fractional Brownian motion
 fBm_1d = acausal_fBm_1D(1024, H=0.7)
 
 # Generate 2D fractional Brownian motion  
 fBm_2d = acausal_fBm_2D((512, 1024), H=0.7)
+
+# Generate multifractal FIF timeseries
+fif = FIF_1D(2**16, H=0.3, C1=0.1)
 
 # Estimate Hurst exponent
 H_est, H_err = haar_fluctuation_hurst(fBm_1d)
@@ -53,13 +57,23 @@ python tests/test_2d_fbm.py 0.7
 
 ## Examples
 
-data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
+See the `examples/` directory for comprehensive demonstrations:
+
+- **`fif_comparison_demo.py`**: Compare Hurst estimation methods on multifractal FIF simulations with different intermittency parameters
+- **`multi_dataset_haar_analysis.py`**: Real-world data analysis using Haar fluctuation method
+
+Run examples:
+```bash
+python examples/fif_comparison_demo.py
+```
+
+Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
 
 
 ## Planned Features
 
-- Fractionally integrated flux (FIF) simulation
+- 2D FIF simulation
 - Advanced multifractal analysis tools
 - Additional Hurst estimation methods
 - Comprehensive documentation
