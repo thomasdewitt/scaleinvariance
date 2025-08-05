@@ -26,9 +26,9 @@ def main():
     
     # Create 4 simulations with same noise, different parameters
     params = [
-        (-0.3, 0.01, 'H=-0.3, C1=0.01'),
-        (-0.3, 0.1, 'H=-0.3, C1=0.1'), 
-        (0.3, 0.01, 'H=0.3, C1=0.01'),
+        (0.0, 0.001, 'H=0.0, C1=0.001'),
+        (0.0, 0.1, 'H=0.0, C1=0.1'), 
+        (0.3, 0.001, 'H=0.3, C1=0.001'),
         (0.3, 0.1, 'H=0.3, C1=0.1')
     ]
     
@@ -42,30 +42,30 @@ def main():
     # Create figure with subplots - 4 time series plots + 4 analysis plots
     fig = plt.figure(figsize=(12, 16))
     
-    # Top 2x2: Individual FIF time series plots (H=-0.3 left, H=0.3 right)
-    ax1 = plt.subplot(4, 2, 1)  # H=-0.3, C1=0.01
-    ax2 = plt.subplot(4, 2, 2)  # H=0.3, C1=0.01
-    ax3 = plt.subplot(4, 2, 3)  # H=-0.3, C1=0.1
+    # Top 2x2: Individual FIF time series plots (H=0.0 left, H=0.3 right)
+    ax1 = plt.subplot(4, 2, 1)  # H=0.0, C1=0.001
+    ax2 = plt.subplot(4, 2, 2)  # H=0.3, C1=0.001
+    ax3 = plt.subplot(4, 2, 3)  # H=0.0, C1=0.1
     ax4 = plt.subplot(4, 2, 4)  # H=0.3, C1=0.1
     
     # Plot each simulation individually
     x = np.arange(len(simulations[0][0]))
     
-    # H=-0.3, C1=0.01
+    # H=0.0, C1=0.001
     fif, H, C1, _ = simulations[0]
     ax1.plot(x[::64], fif[::64], 'k-', alpha=0.8, linewidth=0.5)
     ax1.set_title(f'H={H}, C1={C1}')
     ax1.set_xticks([])
     ax1.set_yticks([])
     
-    # H=0.3, C1=0.01
+    # H=0.3, C1=0.001
     fif, H, C1, _ = simulations[2]
     ax2.plot(x[::64], fif[::64], 'k-', alpha=0.8, linewidth=0.5)
     ax2.set_title(f'H={H}, C1={C1}')
     ax2.set_xticks([])
     ax2.set_yticks([])
     
-    # H=-0.3, C1=0.1
+    # H=0.0, C1=0.1
     fif, H, C1, _ = simulations[1]
     ax3.plot(x[::64], fif[::64], 'k-', alpha=0.8, linewidth=0.5)
     ax3.set_title(f'H={H}, C1={C1}')
@@ -80,15 +80,18 @@ def main():
     ax4.set_yticks([])
     
     # Analysis plots - row 2: Haar fluctuations
-    ax5 = plt.subplot(4, 2, 5)  # Haar H=-0.3
+    ax5 = plt.subplot(4, 2, 5)  # Haar H=0.0
     ax6 = plt.subplot(4, 2, 6)  # Haar H=0.3
     
     # Analysis plots - row 3: Spectral
-    ax7 = plt.subplot(4, 2, 7)  # Spectral H=-0.3  
+    ax7 = plt.subplot(4, 2, 7)  # Spectral H=0.0  
     ax8 = plt.subplot(4, 2, 8)  # Spectral H=0.3
     
     # Generate 10 simulations for each parameter combination for analysis
     print("Generating 10 simulations for each parameter combination...")
+
+    params.extend([(-0.3, 0.001, 'H=-0.3, C1=0.001'), (-0.3, 0.1, 'H=-0.3, C1=0.1')])
+
     analysis_sims = {}
     for H, C1, label in params:
         fif_array = []
@@ -98,7 +101,7 @@ def main():
         analysis_sims[(H, C1)] = np.stack(fif_array, axis=0)
         print(f"  Generated 10 sims for {label}")
     
-    # Haar analysis for H=-0.3 cases (averaged over 10 sims)
+    # Haar analysis for H=0.0 cases (averaged over 10 sims)
     print("Computing Haar fluctuations (10 sim average)...")
     for i, (_, H, C1, label) in enumerate([simulations[0], simulations[1]]):
         fif_batch = analysis_sims[(H, C1)]
@@ -109,7 +112,7 @@ def main():
         ax5.loglog(lags * 256, fit, '--', color=color[0], alpha=0.6, 
                   label=f'H={H_est:.3f}±{H_err:.3f}')
     
-    ax5.set_title('Haar Fluctuations: H = -0.3')
+    ax5.set_title('Haar Fluctuations: H = 0.0')
     ax5.set_xlabel('Lag τ')
     ax5.set_ylabel('Fluctuation F(τ)')
     ax5.legend()
@@ -131,7 +134,7 @@ def main():
     ax6.legend()
     ax6.grid(True, alpha=0.3)
     
-    # Spectral analysis for H=-0.3 cases (averaged over 10 sims)
+    # Spectral analysis for H=0.0 cases (averaged over 10 sims)
     print("Computing spectral Hurst estimates (10 sim average)...")
     for i, (_, H, C1, label) in enumerate([simulations[0], simulations[1]]):
         fif_batch = analysis_sims[(H, C1)]
@@ -142,7 +145,7 @@ def main():
         ax7.loglog(freqs / 256, fit, '--', color=color[0], alpha=0.6,
                   label=f'H={H_est:.3f}±{H_err:.3f}')
     
-    ax7.set_title('Power Spectra: H = -0.3')
+    ax7.set_title('Power Spectra: H = 0.0')
     ax7.set_xlabel('Frequency')
     ax7.set_ylabel('Power')
     ax7.legend()
@@ -171,19 +174,20 @@ def main():
     plt.savefig('fif_comparison_demo.png', dpi=300, bbox_inches='tight')
     print("Saved plot as 'fif_comparison_demo.png'")
     
-    # Print summary
+    # Print summary using 10 simulation ensemble
     print("\n" + "="*60)
-    print("Summary of Hurst estimates:")
+    print("Summary of Hurst estimates (10 simulation ensemble):")
     print("="*60)
-    for fif, H_true, C1, label in simulations:
-        H_haar, H_haar_err = scaleinvariance.haar_fluctuation_hurst(fif[::256], max_sep=100)
-        H_spec, H_spec_err = scaleinvariance.spectral_hurst(fif[::256])
-        H_struct, H_struct_err = scaleinvariance.structure_function_hurst(fif[::256], max_sep=100)
+    for H_true, C1, label in params:
+        fif_batch = analysis_sims[(H_true, C1)]
+        H_haar, H_haar_err = scaleinvariance.haar_fluctuation_hurst(fif_batch, axis=1, max_sep=100)
+        H_spec, H_spec_err = scaleinvariance.spectral_hurst(fif_batch, axis=1)
+        H_struct, H_struct_err = scaleinvariance.structure_function_hurst(fif_batch, axis=1, max_sep=100)
         print(f"{label}:")
         print(f"  True H: {H_true:.2f}")
         print(f"  Haar:   {H_haar:.3f} ± {H_haar_err:.3f}")
-        print(f"  Spectral: {H_spec:.3f} ± {H_spec_err:.3f}")
         print(f"  Structure: {H_struct:.3f} ± {H_struct_err:.3f}")
+        print(f"  Spectral: {H_spec:.3f} ± {H_spec_err:.3f}")
         print()
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ except FileNotFoundError:
 
 setup(
     name="scaleinvariance",
-    version="0.1.0",
+    version="0.2.0",
     author="Thomas DeWitt",
     description="Simulation and analysis of multifractal fields",
     long_description=long_description,
