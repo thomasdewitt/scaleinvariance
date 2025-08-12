@@ -40,6 +40,70 @@ def extremal_levy(alpha, size=1):
     )
     return sample
 
+def create_corrected_kernel(distance, alpha):
+    """
+    Create a finite-size corrected kernel for fractionally integrated flux simulations.
+    
+    This function implements the correction method from Lovejoy & Schertzer (2010) 
+    "On the simulation of continuous in scale universal multifractals, Part II".
+    
+    The method reduces leading-order finite-size correction terms (Δx^(-D/α)) that 
+    cause deviations from pure scaling behavior in fractionally integrated flux model.
+    It modifies the basic power-law singularity |x|^(-1/α') by applying exponential 
+    cutoffs and normalization corrections to reduce boundary effects.
+    
+    This function expects the following distance array format:
+    odd integers with dx=2 spacing (e.g., [..., 3, 1, 3, 5, 7, 9, ...]).
+    
+    Parameters:
+    -----------
+    distance : torch.Tensor
+        Distance array with dx=2 spacing of odd integers
+    alpha : float  
+        Lévy index parameter (1 < alpha <= 2)
+        
+    Returns:
+    --------
+    torch.Tensor
+        Corrected singularity kernel for convolution
+    """
+    if not isinstance(distance, torch.Tensor):
+        distance = torch.as_tensor(distance, device=device, dtype=dtype)
+    
+    grid_size = distance.numel()
+    ratio = 2.0
+    alpha_t = torch.tensor(alpha, dtype=dtype, device=device)
+    alpha_prime = 1.0 / (1 - 1/alpha_t)
+    cutoff_length = grid_size / 2.0
+    cutoff_length2 = cutoff_length / ratio
+    
+    # Calculate exponential cutoffs
+    exponential_cutoff = torch.exp(torch.clamp(-(distance/cutoff_length)**4, max=0, min=-200))
+    exponential_cutoff2 = torch.exp(torch.clamp(-(distance/cutoff_length2)**4, max=0, min=-200))
+    
+    # Base singularity
+    convolution_kernel = distance**(-1/alpha_prime)
+    
+    # Calculate normalization constants
+    smoothed_kernel = convolution_kernel * exponential_cutoff
+    norm_constant1 = torch.sum(smoothed_kernel)
+    
+    smoothed_kernel = convolution_kernel * exponential_cutoff2
+    norm_constant2 = torch.sum(smoothed_kernel)
+    
+    
+    normalization_factor = (ratio**(-1/alpha_t) * norm_constant1 - norm_constant2) / (ratio**(-1/alpha_t) - 1)
+    
+    # Final smoothing
+    final_filter = torch.exp(torch.clamp(-distance/3.0, max=0, min=-200))
+    smoothed_kernel = convolution_kernel * final_filter
+    filter_integral = torch.sum(smoothed_kernel)
+    
+    correction_factor = -normalization_factor / filter_integral
+    convolution_kernel = (convolution_kernel * (1 + correction_factor * final_filter))**(1/(alpha_t - 1))
+    
+    return convolution_kernel
+
 def periodic_convolve(signal, kernel):
     """
     Performs periodic convolution of two 1D arrays using Fourier methods.
@@ -77,11 +141,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
     specified Hurst exponent H and intermittency parameter C1. The method follows
     the theory of Schertzer & Lovejoy for multifractal fields.
 
-    Note: Lovejoy & Schertzer singularity corrections are TODO
+    Note: Lovejoy & Schertzer finite-size corrections are implemented for the first integral 
+    (flux generation) via create_corrected_kernel. Corrections for the second integral 
+    (H≠0 observable) are not yet implemented.
     
     Algorithm:
         1. Generate extremal Lévy noise with stability parameter alpha
-        2. Convolve with power-law kernel |k|^(-1/alpha) to create log-flux
+        2. Convolve with corrected kernel (finite-size corrected |k|^(-1/alpha)) to create log-flux
         3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux  
         4. For H ≠ 0: Convolve flux with kernel |k|^(-1+H) to get observable
         5. For H < 0: Apply differencing to handle negative Hurst exponents
@@ -154,10 +220,18 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
 
     if outer_scale is None: outer_scale = size
 
-    t = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
-    t[t==0] = 1
-    kernel1 = t ** (-1/alpha)
-    kernel2 = t ** (-1 + H)
+    # Create distance array for corrected kernel (odd numbers, dx=2)
+    position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
+    distance_corrected = torch.abs(position_range)
+    
+    
+    # Use corrected kernel with distance array
+    kernel1 = create_corrected_kernel(distance_corrected, alpha)
+    
+    # For kernel2, create standard distance array and handle zero
+    distance_standard = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
+    distance_standard[distance_standard==0] = 1
+    kernel2 = distance_standard ** (-1 + H)
 
     kernel1[size//2+outer_scale//2:] = 0
     kernel1[size//2-outer_scale//2] = 0
