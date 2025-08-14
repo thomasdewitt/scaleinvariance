@@ -104,6 +104,106 @@ def create_corrected_kernel(distance, alpha):
     
     return convolution_kernel
 
+def create_corrected_H_kernel(distance, H, size):
+    """
+    Create a finite-size corrected kernel for the second (H) fractional integral.
+    
+    This function implements the correction method from Lovejoy & Schertzer (2010)
+    for the second integral kernel |x|^(-1+H). It reduces finite-size effects
+    by applying exponential cutoffs and normalization corrections.
+    
+    Note: This function expects distance array with dx=1 spacing 
+    (e.g., [..., -2, -1, 0, 1, 2, ...]) unlike Lovejoy's dx=2.
+    
+    Parameters:
+    -----------
+    distance : torch.Tensor
+        Distance array with dx=1 spacing
+    H : float
+        Hurst exponent parameter (-1 < H < 1)
+    size : int
+        Size of the simulation domain
+        
+    Returns:
+    --------
+    torch.Tensor
+        Corrected H-integral kernel for convolution
+    """
+    if not isinstance(distance, torch.Tensor):
+        distance = torch.as_tensor(distance, device=device, dtype=dtype)
+    
+    # Adjustment for dx=1 vs Lovejoy's dx=2
+    # In Lovejoy's code, lambda is the grid size with dx=2
+    # In our code with dx=1, the equivalent lambda is size
+    lambda_equiv = size
+    ratio = 2.0
+    
+    # Cutoff lengths (following Lovejoy's FracDiffH)
+    outer_cutoff = lambda_equiv / 2.0
+    outer_cutoff2 = outer_cutoff / ratio
+    inner_cutoff = 1.0  # For acausal; use 0.01 for causal as in Lovejoy
+    smoothing_cutoff = lambda_equiv / 4.0
+    
+    # Base singularity kernel: |x|^(-1+H)
+    # Handle zero by setting to 1 (will be zeroed by cutoffs anyway)
+    abs_distance = torch.abs(distance)
+    abs_distance[abs_distance == 0] = 1
+    base_kernel = abs_distance ** (-1 + H)
+    
+    # Inner cutoff to remove singularity at origin
+    # Using smooth cutoff: 1 - exp(-(|x|/inner_cutoff)^2)
+    inner_cutoff_factor = 1.0 - torch.exp(
+        torch.clamp(-(abs_distance/inner_cutoff)**2, max=0, min=-200)
+    )
+    
+    # Outer exponential cutoffs
+    outer_exp_cutoff = torch.exp(
+        torch.clamp(-(abs_distance/outer_cutoff)**4, max=0, min=-200)
+    )
+    outer_exp_cutoff2 = torch.exp(
+        torch.clamp(-(abs_distance/outer_cutoff2)**4, max=0, min=-200)
+    )
+    
+    # Calculate normalization constants (following Lovejoy's approach)
+    # Note: Mean instead of sum because of different normalization convention
+    smoothed_kernel1 = base_kernel * outer_exp_cutoff * inner_cutoff_factor
+    t1 = torch.sum(smoothed_kernel1)
+    
+    smoothed_kernel2 = base_kernel * outer_exp_cutoff2 * inner_cutoff_factor
+    t2 = torch.sum(smoothed_kernel2)
+    
+    # Compute normalization factor EEH (equivalent to Lovejoy's EEH)
+    # Adjusted for our dx=1 convention
+    norm_factor = (t1 * ratio**(-H) - t2) / (ratio**(-H) - 1)
+    
+    # Final smoothing function for correction
+    final_smooth = inner_cutoff_factor * torch.exp(
+        torch.clamp(-abs_distance/smoothing_cutoff, max=0, min=-200)
+    )
+    
+    # Calculate correction coefficient
+    smoothed_final = base_kernel * inner_cutoff_factor * outer_exp_cutoff2 * final_smooth
+    GH = torch.sum(smoothed_final)
+    
+    # Avoid division by zero
+    if torch.abs(GH) < 1e-12:
+        correction_coeff = 0.0
+    else:
+        correction_coeff = -norm_factor / GH
+    
+    # Apply correction to kernel
+    corrected_kernel = base_kernel * (1 + correction_coeff * final_smooth)
+    
+    # For numerical stability, ensure kernel is not negative
+    # This shouldn't happen with proper parameters, but safeguard
+    corrected_kernel = torch.where(
+        corrected_kernel > 0, 
+        corrected_kernel, 
+        torch.zeros_like(corrected_kernel)
+    )
+    
+    return corrected_kernel
+
 def periodic_convolve(signal, kernel):
     """
     Performs periodic convolution of two 1D arrays using Fourier methods.
@@ -133,17 +233,15 @@ def periodic_convolve(signal, kernel):
     convolved = torch_ifft(fft_signal * fft_kernel)
     return convolved.real
 
-def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
+def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, correct_for_finite_size_effects=True):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
     
     FIF is a multiplicative cascade model that generates multifractal fields with
-    specified Hurst exponent H and intermittency parameter C1. The method follows
-    the theory of Schertzer & Lovejoy for multifractal fields.
+    specified Hurst exponent H, intermittency parameter C1, and Levy index alpha. 
+    The method follows Lovejoy & Schertzer 2010, including finite-size corrections.
 
-    Note: Lovejoy & Schertzer finite-size corrections are implemented for the first integral 
-    (flux generation) via create_corrected_kernel. Corrections for the second integral 
-    (H≠0 observable) are not yet implemented.
+    Returns field normalized by mean.
     
     Algorithm:
         1. Generate extremal Lévy noise with stability parameter alpha
@@ -170,6 +268,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
         False gives symmetric (non-causal) kernels.
     outer_scale : int, optional
         Large-scale cutoff. Defaults to size.
+    correct_for_finite_size_effects : bool, optional
+        Whether to use corrections for finite-size effects as described in Lovejoy & Schertzer 2010.
+        Default True. Essentially the only reason for False is illustration of the method.
     
     Returns
     -------
@@ -194,8 +295,6 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
-    - The causality factor adjustment follows Lovejoy's implementation
-      but may require further empirical validation 
     """
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
@@ -220,27 +319,24 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
 
     if outer_scale is None: outer_scale = size
 
-    # Create distance array for corrected kernel (odd numbers, dx=2)
-    position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
-    distance_corrected = torch.abs(position_range)
-    
-    
-    # Use corrected kernel with distance array
-    kernel1 = create_corrected_kernel(distance_corrected, alpha)
-    
-    # For kernel2, create standard distance array and handle zero
-    distance_standard = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
-    distance_standard[distance_standard==0] = 1
-    kernel2 = distance_standard ** (-1 + H)
+    # Create kernel 1
+    if correct_for_finite_size_effects:
+        # Create distance array for corrected kernel (odd numbers, dx=2)
+        position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
+        distance_corrected = torch.abs(position_range)
+        # Use corrected kernel with distance array
+        kernel1 = create_corrected_kernel(distance_corrected, alpha)
+    else:
+        t = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
+        t[t==0] = 1
+        kernel1 = t ** (-1/alpha)
 
     kernel1[size//2+outer_scale//2:] = 0
     kernel1[size//2-outer_scale//2] = 0
-    kernel2[size//2+outer_scale//2:] = 0
-    kernel2[size//2-outer_scale//2] = 0
+    
 
     if causal: 
         kernel1[:size//2] = 0
-        kernel2[:size//2] = 0
 
     kernel1 = torch.cat([torch.zeros(size//2, device=device), kernel1, torch.zeros(size//2, device=device)]) 
     noise = torch.cat([noise, torch.zeros_like(noise, device=device)]) 
@@ -259,7 +355,24 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
     flux = torch.exp(scaled)
 
     if H == 0:
+        # Normalize
+        flux = flux/torch.mean(flux)
         return flux.cpu().numpy()
+    
+    # Create kernel 2 only for H \ne 0 case
+    if correct_for_finite_size_effects:
+        # Use prior created distance array for corrected kernels with dx=2
+        kernel2 = create_corrected_H_kernel(distance_corrected, H, size)
+    else:
+        distance_standard = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
+        distance_standard[distance_standard==0] = 1
+        kernel2 = distance_standard ** (-1 + H)
+    
+    if causal: 
+        kernel2[:size//2] = 0
+
+    kernel2[size//2+outer_scale//2:] = 0
+    kernel2[size//2-outer_scale//2] = 0
 
     kernel2 = torch.cat([torch.zeros(size//2, device=device), kernel2, torch.zeros(size//2, device=device)]) 
     flux = torch.cat([flux, torch.ones_like(flux, device=device)])  
@@ -267,5 +380,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None):
 
     if H_int == -1:
         observable = torch.diff(observable)
+
+    # Normalize by mean
+    observable = observable/torch.mean(observable)
 
     return observable.cpu().numpy()

@@ -17,11 +17,7 @@ def process_lags(lags, max_sep, even_only=False):
         Option for selecting lag values. Can be:
           - A list or array of lags.
           - 'all': all integer lags from 1 to max_sep.
-          - 'powers of 10': lags as powers of 10.
-          - 'powers of 3': lags as powers of 3.
-          - 'powers of 2': lags as powers of 2.
-          - 'powers of 1.2': lags as powers of 1.2. (~ 8 per decade)
-          - 'powers of 1.05': lags as powers of 1.05. (~ 25 per decade)
+          - 'powers of XXXX': lags as closest intergers to powers of XXXX, e.g. 2 (~ 3 per decade) or 1.2 (~ 8 per decade).
     max_sep : int
         Maximum separation/lag value.
     even_only : bool, optional
@@ -37,16 +33,12 @@ def process_lags(lags, max_sep, even_only=False):
     elif isinstance(lags, str):
         if lags == 'all':
             lags = np.arange(1, max_sep + 1)
-        elif lags == 'powers of 10':
-            lags = np.array([int(10**n) for n in range(int(np.log10(max_sep)) + 1)])
-        elif lags == 'powers of 3':
-            lags = np.array([int(3**n) for n in range(int(np.log10(max_sep)/np.log10(3)) + 1)])
-        elif lags == 'powers of 2':
-            lags = np.array([int(2**n) for n in range(int(np.log10(max_sep)/np.log10(2)) + 1)])
-        elif lags == 'powers of 1.2':
-            lags = np.array([int(1.2**n) for n in range(int(np.log10(max_sep)/np.log10(1.2)) + 1)])
-        elif lags == 'powers of 1.05':
-            lags = np.array([int(1.05**n) for n in range(int(np.log10(max_sep)/np.log10(1.05)) + 1)])
+        elif lags[:10] == 'powers of ':
+            try:
+                num = float(lags[10:])
+            except:
+                raise ValueError('lags parameter must be of form "powers of XXXX"')
+            lags = np.array([int(num**n) for n in range(int(np.log10(max_sep)/np.log10(num)) + 1)])
         else:
             raise ValueError(f"lags option '{lags}' not supported")
 
