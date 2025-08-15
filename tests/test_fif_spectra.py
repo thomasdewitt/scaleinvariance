@@ -133,13 +133,13 @@ def main():
     ref_power_fif = mean_fif_spectrum[len(freqs)//4]
     ref_freq_fif = freqs[len(freqs)//4]
     theoretical_line_fif = ref_power_fif * (ref_freqs/ref_freq_fif)**(-theoretical_beta_fif)
-    plt.loglog(ref_freqs, theoretical_line_fif, 'r:', linewidth=2,
+    plt.loglog(ref_freqs, theoretical_line_fif, 'g--', linewidth=2,
               label=f'FIF theory (β={theoretical_beta_fif:.2f})')
     
     # fBm (non-intermittent) theoretical line
     theoretical_beta_fbm = 2 * H + 1
     theoretical_line_fbm = ref_power_fif * (ref_freqs/ref_freq_fif)**(-theoretical_beta_fbm)
-    plt.loglog(ref_freqs, theoretical_line_fbm, 'g--', linewidth=2,
+    plt.loglog(ref_freqs, theoretical_line_fbm, 'r--', linewidth=2,
               label=f'Equivalent nonintermittent spectrum (β={theoretical_beta_fbm:.2f})')
     
     plt.xlabel('Frequency')
@@ -172,12 +172,12 @@ def main():
               label='FIF corrected normalized')
     plt.loglog(freqs_uncorrected, normalized_fif_uncorrected_spectrum, 'orange', linewidth=2, 
               label='FIF uncorrected normalized')
-    plt.loglog(freqs, normalized_fbm_theoretical, 'g--', linewidth=2,
+    plt.loglog(freqs, normalized_fbm_theoretical, 'r--', linewidth=2,
               label='fBm normalized by FIF theory')
     
     # Add flat reference line
     median_level = np.median(normalized_fif_spectrum[len(freqs)//4:3*len(freqs)//4])
-    plt.loglog(freqs, np.full_like(freqs, median_level), 'k:', linewidth=1,
+    plt.loglog(freqs, np.full_like(freqs, median_level), 'g--', linewidth=1,
               label='Flat reference')
     
     

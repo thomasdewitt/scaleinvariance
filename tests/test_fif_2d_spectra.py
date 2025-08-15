@@ -6,7 +6,7 @@ Tests FIF_2D simulation from scaleinvariance package and compares spectra
 against theoretical expectations including multifractal scaling corrections.
 Also visualizes the 2D field.
 
-Usage: python test_fif_2d_spectra.py [H] [C1] [alpha] [size]
+Usage: python test_fif_2d_spectra.py [H] [C1] [alpha] [size] [nsims]
 Examples: 
   python test_fif_2d_spectra.py 0.7
   python test_fif_2d_spectra.py 0.7 0.08 1.8
@@ -133,7 +133,7 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     ax3 = plt.subplot(133)
     ratio = binned_psd / theoretical_spectrum
     ax3.loglog(binned_freq, ratio, 'b-', alpha=0.8, label='Simulation/Theory Ratio')
-    ax3.loglog(binned_freq, np.ones_like(binned_freq), 'r--', alpha=0.8, label='Perfect Agreement')
+    ax3.loglog(binned_freq, np.ones_like(binned_freq), 'g--', alpha=0.8, label='Perfect Agreement')
     ax3.set_ylim(1e-2, 1e2)
     ax3.set_title('Spectrum Agreement')
     ax3.set_xlabel('Frequency')
@@ -192,6 +192,17 @@ def main():
             sys.exit(1)
     else:
         size = 1024  # Default size
+
+    if len(sys.argv) > 5:
+        try:
+            nsims = int(sys.argv[5])
+            if nsims <= 0:
+                raise ValueError("N sims must be positive")
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+    else:
+        nsims = 10  # Default
     
     # Validate parameters
     if not (0 < alpha <= 2):
@@ -213,7 +224,7 @@ def main():
     # Run the analysis
     try:
         freq, sim_spec, theo_spec = calculate_2d_spectrum_and_visualize(
-            alpha, C1, H, size=size
+            alpha, C1, H, size=size, n_samples=nsims
         )
         print("\nAnalysis completed successfully!")
         

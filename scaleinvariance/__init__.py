@@ -7,7 +7,7 @@ This package provides tools for:
 - Fractional Brownian motion simulation
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 __author__ = "Thomas DeWitt"
 
 import torch

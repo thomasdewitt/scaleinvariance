@@ -399,6 +399,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     noise = torch.cat([noise, torch.zeros_like(noise, device=device)]) 
     
     integrated = periodic_convolve(noise, kernel1)[size:]
+    del noise, kernel1  # Clean memory
 
     # If causal, adjust for the fact that half the kernel is being deleted
     if causal:
@@ -408,7 +409,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     
 
     scaled = integrated * ((causality_factor * C1) ** (1/alpha))
+    del integrated
     flux = torch.exp(scaled)
+    del scaled
 
     if H == 0:
         # Normalize
@@ -419,10 +422,12 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     if correct_for_finite_size_effects:
         # Use prior created distance array for corrected kernels with dx=2
         kernel2 = create_corrected_H_kernel(distance_corrected, H, size, causal)
+        del distance_corrected
     else:
         distance_standard = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
         distance_standard[distance_standard==0] = 1
         kernel2 = distance_standard ** (-1 + H)
+        del distance_standard
     
     if causal: 
         kernel2[:size//2] = 0
@@ -435,6 +440,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     kernel2 = torch.cat([torch.zeros(size//2, device=device), kernel2, torch.zeros(size//2, device=device)]) 
     flux = torch.cat([flux, torch.ones_like(flux, device=device)])        # Pad with statistical mean of process to eliminate boundary artifacts
     observable = periodic_convolve(flux, kernel2)[size:] 
+    del flux, kernel2
 
     if H_int == -1:
         observable = torch.diff(observable)
@@ -537,8 +543,9 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
     Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
     distance_corrected = torch.sqrt(X**2 + Y**2)
+    del Y, X    # Clean memory
     
-    # Create kernel 1 using corrected method (always use corrections for 2D)
+    # Create kernel 1 using corrected method
     kernel1 = create_corrected_kernel(distance_corrected, alpha)
     
     # Apply outer scale cutoff
@@ -551,13 +558,17 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     # Center the kernel (like 1D) and place noise at top-left
     kernel1_padded[height//2:height//2+height, width//2:width//2+width] = kernel1
     noise_padded[:height, :width] = noise
+    del kernel1, noise          # Clean memory
     
     # Perform first convolution
     integrated = periodic_convolve_2d(noise_padded, kernel1_padded)[height:, width:]
+    del noise_padded, kernel1_padded    # Clean memory
     
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
+    del integrated
     flux = torch.exp(scaled)
+    del scaled
 
     if H == 0:
         # Normalize and return
@@ -565,17 +576,13 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
         return flux.cpu().numpy()
     
     # Create kernel 2 for H != 0 case
-    # For 2D H-kernel, use dx=1 spacing (consistent with 1D implementation)
-    y_coords_h = torch.arange(-height//2, height//2, dtype=dtype, device=device)
-    x_coords_h = torch.arange(-width//2, width//2, dtype=dtype, device=device)
-    Y_h, X_h = torch.meshgrid(y_coords_h, x_coords_h, indexing='ij')
-    distance_h = torch.sqrt(X_h**2 + Y_h**2)
     
     # Use the corrected H-kernel
-    kernel2 = create_corrected_H_kernel(distance_h, H, min(height, width), False)
+    kernel2 = create_corrected_H_kernel(distance_corrected, H, min(height, width), False)
     
     # Apply outer scale cutoff
-    kernel2[distance_h > outer_scale//2] = 0
+    kernel2[distance_corrected*2 > outer_scale] = 0
+    del distance_corrected
     
     # Pad for convolution
     kernel2_padded = torch.zeros((2*height, 2*width), device=device, dtype=dtype)
@@ -584,9 +591,11 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     # Center the kernel (like 1D) and place flux at top-left
     kernel2_padded[height//2:height//2+height, width//2:width//2+width] = kernel2
     flux_padded[:height, :width] = flux
+    del flux, kernel2
     
     # Perform second convolution
     observable = periodic_convolve_2d(flux_padded, kernel2_padded)[height:, width:]
+    del flux_padded, kernel2_padded
 
     # Normalize by mean
     observable = observable / torch.mean(observable)
