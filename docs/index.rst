@@ -1,60 +1,82 @@
-ScaleInvariance Documentation
-=============================
+# scaleinvariance
 
-.. warning::
-   This package is under active development. Current functionality is limited to Hurst exponent estimation and fractional Brownian motion simulation.
+Simulation and analysis tools for scale-invariant processes and multifractal fields.
 
-ScaleInvariance provides simulation and analysis tools for scale-invariant processes and multifractal fields.
+## Current Features
 
-Features
---------
+### Hurst Exponent Estimation
 
-**Simulation**
-   - 1D fractional Brownian motion via spectral synthesis
-   - 2D fractional Brownian motion with proper isotropy
+- **Haar fluctuation method**: `haar_fluctuation_hurst()`
+- **Structure function method**: `structure_function_hurst()`
+- **Spectral method**: `spectral_hurst()`
 
-**Hurst Exponent Estimation**
-   - Haar fluctuation method
-   - Structure function method  
-   - Spectral method
+All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Plotting data and fit line may be returned with `return_fit=True`.
 
-All methods support multi-dimensional arrays and return uncertainty estimates.
+### Simulation
 
-Quick Start
------------
+`pytorch` is leveraged for parallel and efficient simulation.
 
-.. code-block:: python
+- **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
+- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
+- **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
+- **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals
 
-   from scaleinvariance import acausal_fBm_1D, acausal_fBm_2D, haar_fluctuation_hurst
+## Installation
 
-   # Generate 1D fractional Brownian motion
-   fBm_1d = acausal_fBm_1D(1024, H=0.7)
+```bash
+pip install scaleinvariance
+```
 
-   # Generate 2D fractional Brownian motion  
-   fBm_2d = acausal_fBm_2D((512, 1024), H=0.7)
+## Basic Usage
 
-   # Estimate Hurst exponent
-   H_est, H_err = haar_fluctuation_hurst(fBm_1d)
-   print(f"Estimated H = {H_est:.3f} ± {H_err:.3f}")
+```python
+from scaleinvariance import acausal_fBm_1D, acausal_fBm_2D, FIF_1D, haar_fluctuation_hurst
 
-Installation
-------------
+# Generate 1D fractional Brownian motion
+fBm_1d = acausal_fBm_1D(1024, H=0.7)
 
-.. code-block:: bash
+# Generate 2D fractional Brownian motion  
+fBm_2d = acausal_fBm_2D((512, 1024), H=0.7)
 
-   pip install scaleinvariance
+# Generate multifractal FIF timeseries
+fif = FIF_1D(2**16, H=0.3, C1=0.1)
 
-Contents
---------
+# Estimate Hurst exponent
+H_est, H_err = haar_fluctuation_hurst(fBm_1d)
+print(f"Estimated H = {H_est:.3f} ± {H_err:.3f}")
+```
 
-.. toctree::
-   :maxdepth: 2
+## Testing
 
-   api
+```bash
+# Test 1D fBm generation and Hurst estimation
+python tests/test_acausal_fBm_hurst_estimation.py 0.7
 
-Indices and tables
-==================
+# Test 2D fBm with isotropy validation
+python tests/test_2d_fbm.py 0.7
+```
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+## Examples
+
+See the `examples/` directory for comprehensive demonstrations:
+
+- **`fif_comparison_demo.py`**: Compare Hurst estimation methods on multifractal FIF simulations with different intermittency parameters
+- **`multi_dataset_haar_analysis.py`**: Real-world data analysis using Haar fluctuation method
+
+Run examples:
+
+```bash
+python examples/fif_comparison_demo.py
+```
+
+Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
+
+## Planned Features
+
+- Advanced multifractal analysis tools
+- Comprehensive documentation
+
+## Requirements
+
+- Python ≥ 3.8
+- NumPy, SciPy, PyTorch, Matplotlib

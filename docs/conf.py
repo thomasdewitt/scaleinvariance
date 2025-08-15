@@ -5,10 +5,10 @@ import sys
 sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
-project = 'ScaleInvariance'
+project = 'scaleinvariance'
 copyright = '2024, Thomas DeWitt'
 author = 'Thomas DeWitt'
-release = '0.1.0'
+release = '0.3.0'
 
 # -- General configuration ---------------------------------------------------
 extensions = [

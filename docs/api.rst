@@ -11,6 +11,10 @@ Simulation
 
 .. autofunction:: scaleinvariance.acausal_fBm_2D
 
+.. autofunction:: scaleinvariance.FIF_1D
+
+.. autofunction:: scaleinvariance.FIF_2D
+
 Analysis
 --------
 
