@@ -1,6 +1,8 @@
-# ScaleInvariance
+# scaleinvariance
 
 Simulation and analysis tools for scale-invariant processes and multifractal fields.
+
+[Documentation](https://scaleinvariance.readthedocs.io/en/latest/index.html)
 
 ## Current Features
 

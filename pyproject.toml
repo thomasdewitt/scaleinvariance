@@ -27,4 +27,4 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/username/scaleinvariance"
+Homepage = "https://github.com/thomasdewitt/scaleinvariance"
