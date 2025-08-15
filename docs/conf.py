@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'scaleinvariance'
 copyright = '2024, Thomas DeWitt'
 author = 'Thomas DeWitt'
-release = '0.3.1'
+release = '0.3.2'
 
 # -- General configuration ---------------------------------------------------
 extensions = [

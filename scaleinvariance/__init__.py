@@ -7,17 +7,18 @@ This package provides tools for:
 - Fractional Brownian motion simulation
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = "Thomas DeWitt"
 
 import torch
 import os
 
-# Set threading for both PyTorch and BLAS
-torch.set_num_threads(8)
-os.environ['OMP_NUM_THREADS'] = '8'
-os.environ['MKL_NUM_THREADS'] = '8'
-os.environ['NUMEXPR_NUM_THREADS'] = '8'
+# Set threading for both PyTorch and BLAS to 9/10 of available CPU cores
+num_threads = max(1, int(os.cpu_count() * 0.9))
+torch.set_num_threads(num_threads)
+os.environ['OMP_NUM_THREADS'] = str(num_threads)
+os.environ['MKL_NUM_THREADS'] = str(num_threads)
+os.environ['NUMEXPR_NUM_THREADS'] = str(num_threads)
 
 device = torch.device('cpu')
 
