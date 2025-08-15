@@ -1,24 +1,25 @@
 # ScaleInvariance
 
-⚠️ **This package is under active development.**
-
 Simulation and analysis tools for scale-invariant processes and multifractal fields.
 
 ## Current Features
 
-### Simulation
-
-- **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
-- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
-- **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation
-
 ### Hurst Exponent Estimation
 
 - **Haar fluctuation method**: `haar_fluctuation_hurst()`
-- **Structure function method**: `structure_function_hurst()`  
+- **Structure function method**: `structure_function_hurst()`
 - **Spectral method**: `spectral_hurst()`
 
-All methods support multi-dimensional arrays and return uncertainty estimates.
+All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Plotting data and fit line may be returned with `return_fit=True`.
+
+### Simulation
+
+`pytorch` is leveraged for parallel and efficient simulation.
+
+- **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
+- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
+- **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
+- **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals
 
 ## Installation
 
@@ -63,19 +64,16 @@ See the `examples/` directory for comprehensive demonstrations:
 - **`multi_dataset_haar_analysis.py`**: Real-world data analysis using Haar fluctuation method
 
 Run examples:
+
 ```bash
 python examples/fif_comparison_demo.py
 ```
 
 Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
-
-
 ## Planned Features
 
-- 2D FIF simulation
 - Advanced multifractal analysis tools
-- Additional Hurst estimation methods
 - Comprehensive documentation
 
 ## Requirements
