@@ -79,8 +79,7 @@ Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
 ## Planned Features
 
-- Advanced multifractal analysis tools
-- Comprehensive documentation
+- Estimation of multifractal parameters C1 and alpha
 
 ## Requirements
 
