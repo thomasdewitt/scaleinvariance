@@ -1,5 +1,7 @@
 # scaleinvariance
 
+![FIF 2D Example](FIF_2D_H0.3_C10.200_alpha2.0_magma_log_seed2.png)
+
 Simulation and analysis tools for scale-invariant processes and multifractal fields.
 
 [Documentation](https://scaleinvariance.readthedocs.io/en/latest/index.html)
@@ -18,10 +20,12 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 
 `pytorch` is leveraged for parallel and efficient simulation.
 
-- **1D fractional Brownian motion**: `acausal_fBm_1D()` - Spectral synthesis method
-- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fields with proper frequency normalization
+[View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
+
 - **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
-- **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals
+- **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals (Example shown above)
+- **1D fractional Brownian motion**: `acausal_fBm_1D()` - 1D acausal fBm fields
+- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fBm fields
 
 ## Installation
 
@@ -41,7 +45,7 @@ fBm_1d = acausal_fBm_1D(1024, H=0.7)
 fBm_2d = acausal_fBm_2D((512, 1024), H=0.7)
 
 # Generate multifractal FIF timeseries
-fif = FIF_1D(2**16, H=0.3, C1=0.1)
+fif = FIF_1D(2**16, alpha=1.8, C1=0.1, H=0.3)
 
 # Estimate Hurst exponent
 H_est, H_err = haar_fluctuation_hurst(fBm_1d)
