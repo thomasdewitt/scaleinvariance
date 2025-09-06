@@ -24,12 +24,8 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
     lags : str, list, or np.ndarray, optional
         Option for selecting lag values. Can be:
           - A list or array of lags.
-          - 'all': all integer lags from 2 to max_lag.
-          - 'powers of 10': lags as powers of 10.
-          - 'powers of 3': lags as powers of 3.
-          - 'powers of 2': lags as powers of 2.
-          - 'powers of 1.2': lags as powers of 1.2. (~ 8 per decade)
-          - 'powers of 1.05': lags as powers of 1.05. (~ 25 per decade)
+          - 'all': all integer lags from 1 to max_sep.
+          - 'powers of X': lags as integers of powers of X, where X is any number (e.g., 'powers of 2', 'powers of 1.2').
     nan_behavior : str, optional
         Behavior when encountering NaN values in the data. Options are:
             - 'raise': Raise an error if NaN values are found (default).

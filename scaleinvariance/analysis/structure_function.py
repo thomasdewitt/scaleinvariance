@@ -26,11 +26,7 @@ def structure_function_analysis(data, order=1, max_sep=None, axis=0, lags='power
         Option for selecting lag values. Can be:
           - A list or array of lags.
           - 'all': all integer lags from 1 to max_sep.
-          - 'powers of 10': lags as powers of 10.
-          - 'powers of 3': lags as powers of 3.
-          - 'powers of 2': lags as powers of 2.
-          - 'powers of 1.2': lags as powers of 1.2.
-          - 'powers of 1.05': lags as powers of 1.05.
+          - 'powers of X': lags as integers of powers of X, where X is any number (e.g., 'powers of 2', 'powers of 1.2').
     
     Returns
     --------

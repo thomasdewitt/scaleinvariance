@@ -1,6 +1,7 @@
 import torch
 from torch.fft import fft as torch_fft, ifft as torch_ifft
 import numpy as np
+from .fbm import acausal_fBm_2D, acausal_fBm_1D
 
 device = torch.device("cpu")
 dtype = torch.float64
@@ -310,7 +311,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     size : int
         Length of simulation (must be even, power of 2 recommended)
     alpha : float
-        Lévy stability parameter in (0, 2). Controls noise distribution.
+        Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
     C1 : float
         Codimension of the mean, controls intermittency strength. 
         Must be > 0 for multifractal behavior.
@@ -353,6 +354,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     """
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
+    size *= 2   # duplicate to eliminate periodicity
+
+
+    if C1 == 0 and not causal: 
+        return acausal_fBm_1D(size, H)[:size//2]
     
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
@@ -364,6 +370,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
 
     if not isinstance(H, (int, float)) or H < 0 or H > 1:
         raise ValueError("H must be a number between -1 and 1.")
+    
+
+    if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
+        raise ValueError("alpha must be a number > 0 and <= 2.")
+    
+    if alpha == 1: 
+        raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
     if levy_noise is None:
         noise = extremal_levy(alpha, size=size)
@@ -372,7 +385,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
             raise ValueError("Provided levy_noise must match the specified size.")
         noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
 
-    if outer_scale is None: outer_scale = size
+    if outer_scale is None: outer_scale = size//2
 
     # Create kernel 1
     if correct_for_finite_size_effects:
@@ -394,11 +407,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
 
     if causal: 
         kernel1[:size//2] = 0
-
-    kernel1 = torch.cat([torch.zeros(size//2, device=device), kernel1, torch.zeros(size//2, device=device)]) 
-    noise = torch.cat([noise, torch.zeros_like(noise, device=device)]) 
     
-    integrated = periodic_convolve(noise, kernel1)[size:]
+    integrated = periodic_convolve(noise, kernel1)
     del noise, kernel1  # Clean memory
 
     # If causal, adjust for the fact that half the kernel is being deleted
@@ -415,7 +425,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
 
     if H == 0:
         # Normalize
-        flux = flux/torch.mean(flux)
+        flux = flux[size//2:] /torch.mean(flux)      # eliminate periodicity
         return flux.cpu().numpy()
     
     # Create kernel 2 only for H \ne 0 case
@@ -437,9 +447,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     kernel2[:lo] = 0
     kernel2[hi:] = 0
 
-    kernel2 = torch.cat([torch.zeros(size//2, device=device), kernel2, torch.zeros(size//2, device=device)]) 
-    flux = torch.cat([flux, torch.ones_like(flux, device=device)])        # Pad with statistical mean of process to eliminate boundary artifacts
-    observable = periodic_convolve(flux, kernel2)[size:] 
+    observable = periodic_convolve(flux, kernel2)[size//2:]     # eliminate periodicity
     del flux, kernel2
 
     if H_int == -1:
@@ -464,7 +472,6 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
         2. Convolve with corrected kernel (finite-size corrected |r|^(-2/alpha)) to create log-flux
         3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux  
         4. For H ≠ 0: Convolve flux with kernel |r|^(-2+H) to get observable
-        5. For H < 0: Apply differencing to handle negative Hurst exponents
     
     Parameters
     ----------
@@ -472,7 +479,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
         Size of simulation. If int, creates square array (size x size).
         If tuple, specifies (height, width). Must be even numbers.
     alpha : float
-        Lévy stability parameter in (0, 2). Controls noise distribution.
+        Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
     C1 : float
         Codimension of the mean, controls intermittency strength. 
         Must be > 0 for multifractal behavior.
@@ -491,7 +498,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     Raises
     ------
     ValueError
-        If size dimensions are not even or H is outside valid range (-1, 1)
+        If size dimensions are not even or H is outside valid range (0, 1)
     ValueError
         If C1 <= 0 (must be positive for multifractal behavior)
     ValueError
@@ -503,25 +510,42 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     >>> fif = FIF_2D(512, alpha=1.8, C1=0.1, H=0.3)
     >>> 
     >>> # Rectangular domain
-    >>> fif = FIF_2D((256, 512), alpha=1.5, C1=0.05, H=-0.2)
+    >>> fif = FIF_2D((256, 512), alpha=1.5, C1=0.05, H=0.2)
     
     Notes
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
-    - Always uses finite-size corrections (no causal option for 2D)
+    - Always uses finite-size corrections and non-causal kernels for 2D
+    - Does not support negative H values (use FIF_1D for H < 0)
     """
     # Handle size parameter
     if isinstance(size, int):
         height, width = size, size
     else:
         height, width = size
+
+    if C1 == 0: 
+        return acausal_fBm_2D((height*2, width*2), H)[:height,:width]
+
+    # Double size to elimiate periodicity; at end, only one quadrant is returned
+    height *= 2
+    width *= 2
+
+    if outer_scale is None: 
+        outer_scale = max(height, width)
         
     if height % 2 != 0 or width % 2 != 0:
         raise ValueError("Height and width must be even numbers; powers of 2 are recommended.")
     
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
+
+    if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
+        raise ValueError("alpha must be a number > 0 and <= 2.")
+    
+    if alpha == 1: 
+        raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
 
     if not isinstance(H, (int, float)) or H < 0 or H > 1:
@@ -534,11 +558,8 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
             raise ValueError("Provided levy_noise must match the specified size.")
         noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
 
-    if outer_scale is None: 
-        outer_scale = min(height, width)
 
-    # Create 2D distance array for corrected kernels
-    # Use the same spacing convention as 1D: dx=2 for first kernel, dx=1 for second
+    # Create 2D distance array for corrected kernels with dx = 2
     y_coords = torch.arange(-(height - 1), height, 2, dtype=dtype, device=device)
     x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
     Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
@@ -551,18 +572,8 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     # Apply outer scale cutoff
     kernel1[distance_corrected*2 > outer_scale] = 0     # convert to units of dx=1 here
     
-    # Pad arrays to double size for periodic convolution
-    kernel1_padded = torch.zeros((2*height, 2*width), device=device, dtype=dtype)
-    noise_padded = torch.zeros((2*height, 2*width), device=device, dtype=dtype)
-    
-    # Center the kernel (like 1D) and place noise at top-left
-    kernel1_padded[height//2:height//2+height, width//2:width//2+width] = kernel1
-    noise_padded[:height, :width] = noise
-    del kernel1, noise          # Clean memory
-    
     # Perform first convolution
-    integrated = periodic_convolve_2d(noise_padded, kernel1_padded)[height:, width:]
-    del noise_padded, kernel1_padded    # Clean memory
+    integrated = periodic_convolve_2d(noise, kernel1)
     
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
@@ -571,11 +582,9 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     del scaled
 
     if H == 0:
-        # Normalize and return
+        # Normalize and return first quadrant only to eliminate periodicity
         flux = flux / torch.mean(flux)
-        return flux.cpu().numpy()
-    
-    # Create kernel 2 for H != 0 case
+        return flux[:height//2, :width//2].cpu().numpy()
     
     # Use the corrected H-kernel
     kernel2 = create_corrected_H_kernel(distance_corrected, H, min(height, width), False)
@@ -584,20 +593,11 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None):
     kernel2[distance_corrected*2 > outer_scale] = 0
     del distance_corrected
     
-    # Pad for convolution
-    kernel2_padded = torch.zeros((2*height, 2*width), device=device, dtype=dtype)
-    flux_padded = torch.ones((2*height, 2*width), device=device, dtype=dtype)       # Pad with statistical mean of process to eliminate boundary artifacts
-    
-    # Center the kernel (like 1D) and place flux at top-left
-    kernel2_padded[height//2:height//2+height, width//2:width//2+width] = kernel2
-    flux_padded[:height, :width] = flux
-    del flux, kernel2
-    
     # Perform second convolution
-    observable = periodic_convolve_2d(flux_padded, kernel2_padded)[height:, width:]
-    del flux_padded, kernel2_padded
+    observable = periodic_convolve_2d(flux, kernel2)
 
     # Normalize by mean
     observable = observable / torch.mean(observable)
 
-    return observable.cpu().numpy()
+    # return first quadrant only to eliminate periodicity
+    return observable[:height//2, :width//2].cpu().numpy()

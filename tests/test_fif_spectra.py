@@ -87,7 +87,7 @@ def main():
     # Concatenate all simulations and analyze with spectral_hurst
     all_fif_data = np.vstack(all_fif_data)
     H_fif, H_err_fif, freqs, mean_fif_spectrum, fit_line = scaleinvariance.spectral_hurst(
-        all_fif_data, return_fit=True, axis=1)
+        all_fif_data, return_fit=True, axis=1, min_wavelength=2.1)
     beta_fif = 2 * H_fif + 1
     
     # Generate uncorrected FIF simulations for comparison
@@ -105,7 +105,7 @@ def main():
     # Concatenate uncorrected simulations and analyze
     all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
     H_fif_uncorrected, H_err_fif_uncorrected, freqs_uncorrected, mean_fif_uncorrected_spectrum, fit_line_uncorrected = scaleinvariance.spectral_hurst(
-        all_fif_uncorrected_data, return_fit=True, axis=1)
+        all_fif_uncorrected_data, return_fit=True, axis=1, min_wavelength=2.1)
     beta_fif_uncorrected = 2 * H_fif_uncorrected + 1
     
     

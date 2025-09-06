@@ -21,90 +21,83 @@ import scaleinvariance
 
 def K(q, alpha, C1):
     """Scaling function from multifractal theory"""
+    if alpha == 1: return C1 * q * np.log(q)
     return C1 * (q**alpha - q) / (alpha - 1)
 
 def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     """
-    Calculate and plot the power spectrum of FIF_2D simulations along one dimension,
-    compare with theoretical spectrum, and visualize the 2D field.
+    Calculate and plot the power spectrum, Haar fluctuation, and structure function
+    analysis of FIF_2D simulations, compare with theoretical scaling, and visualize the 2D field.
     
     Parameters:
         alpha (float): Multifractal index for the Lévy noise.
         C1 (float): Codimension of the mean.
         H (float): Hurst exponent.
         size (int): Size of each simulation (square domain).
-        n_samples (int): Number of simulations to average over for spectrum.
+        n_samples (int): Number of simulations to average over for analysis.
     
     Returns:
-        tuple: (frequencies, average_power_spectrum, theoretical_spectrum)
+        dict: Results from all three analysis methods
     """
     print(f"Generating {n_samples} FIF_2D simulations of size {size}x{size}...")
     
-    all_spectra = []
-    field_for_display = None
-    
+    # Generate all FIF fields
+    print("Generating all FIF_2D fields...")
+    all_fields = []
     for i in range(n_samples):
-        # Generate 2D FIF field
-        data_2d = scaleinvariance.FIF_2D(size=size, alpha=alpha, C1=C1, H=H)
-        
-        # Save first field for visualization
-        if i == 0:
-            field_for_display = data_2d.copy()
-        
-        # Take 1D slices along rows (axis=1) and average their spectra
-        slice_spectra = []
-        # Take every 8th row to reduce computation but maintain statistics
-        for row_idx in range(0, size, max(1, size//128)):
-            row_data = data_2d[row_idx, :]
-            fft_data = np.fft.fft(row_data)
-            power_spectrum = np.abs(fft_data[:size//2+1])**2
-            slice_spectra.append(power_spectrum[1:])  # Remove DC component
-        
-        # Average spectra from all rows for this realization
-        avg_slice_spectrum = np.mean(slice_spectra, axis=0)
-        all_spectra.append(avg_slice_spectrum)
-        
+        data_2d = scaleinvariance.FIF_2D(size=(size//2, size*2), alpha=alpha, C1=C1, H=H)
+        all_fields.append(data_2d)
         if (i+1) % max(1, n_samples//5) == 0:
-            print(f"  Completed {i+1}/{n_samples}")
+            print(f"  Generated {i+1}/{n_samples}")
     
-    # Average over all realizations
-    avg_spectrum = np.mean(all_spectra, axis=0)
-    frequencies = np.fft.rfftfreq(size)[1:]
+    all_fields = np.array(all_fields)  # Shape: (n_samples, size, size)
+    field_for_display = all_fields[0].copy()
     
-    # Bin the spectrum for cleaner visualization
-    binned_freq = []
-    binned_psd = []
-    nbins = 30
-    bins = np.logspace(np.log10(frequencies.min()), np.log10(frequencies.max()), nbins + 1)
+    # Perform all three analyses using the efficient axis parameter
+    print("Running spectral analysis...")
+    H_spectral, H_spectral_err, freqs, psd, fit_line_spectral = scaleinvariance.spectral_hurst(
+        all_fields, min_wavelength=1, max_wavelength=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+    )
     
-    for i in range(nbins):
-        in_bin = (frequencies >= bins[i]) & (frequencies < bins[i+1])
-        if np.any(in_bin):
-            binned_freq.append(np.mean(frequencies[in_bin]))
-            binned_psd.append(np.mean(avg_spectrum[in_bin]))
+    print("Running Haar fluctuation analysis...")
+    H_haar, H_haar_err, lags_haar, fluct, fit_line_haar = scaleinvariance.haar_fluctuation_hurst(
+        all_fields, min_sep=1, max_sep=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+    )
     
-    binned_freq = np.array(binned_freq)
-    binned_psd = np.array(binned_psd)
+    print("Running structure function analysis...")
+    H_sf, H_sf_err, lags_sf, sf_vals, fit_line_sf = scaleinvariance.structure_function_hurst(
+        all_fields, min_sep=1, max_sep=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+    )
     
-    # Calculate theoretical spectrum
+    # Calculate theoretical H value
+    theoretical_H = H + K(1, alpha, C1)
+    
+    # Print results
+    print(f"\nHurst Exponent Estimation Results:")
+    print(f"  Theoretical H: {theoretical_H:.3f}")
+    print(f"  Spectral method: {H_spectral:.3f} ± {H_spectral_err:.3f}")
+    print(f"  Haar method: {H_haar:.3f} ± {H_haar_err:.3f}")
+    print(f"  Structure function: {H_sf:.3f} ± {H_sf_err:.3f}")
+    
+    # Calculate theoretical spectrum for comparison
     beta = 2*H - K(2, alpha, C1) + 1
-    theoretical_spectrum = binned_freq ** (-beta)
-    theoretical_fBm_spec = binned_freq ** (-2*H-1)
+    theoretical_spectrum = freqs ** (-beta)
+    theoretical_fBm_spec = freqs ** (-2*H-1)
     
     # Scale to match simulation at reference point
-    ref_idx = min(10, len(binned_psd)-1)
+    ref_idx = min(10, len(psd)-1)
     if np.isfinite(theoretical_spectrum[ref_idx]) and theoretical_spectrum[ref_idx] > 0:
-        scale_factor_multifractal = binned_psd[ref_idx] / theoretical_spectrum[ref_idx]
+        scale_factor_multifractal = psd[ref_idx] / theoretical_spectrum[ref_idx]
         theoretical_spectrum *= scale_factor_multifractal
         
-        scale_factor_fbm = binned_psd[ref_idx] / theoretical_fBm_spec[ref_idx]
+        scale_factor_fbm = psd[ref_idx] / theoretical_fBm_spec[ref_idx]
         theoretical_fBm_spec *= scale_factor_fbm
     
-    # Create figure with three subplots
-    fig = plt.figure(figsize=(16, 5))
+    # Create figure with 2x2 subplot layout
+    fig = plt.figure(figsize=(12, 10))
     
-    # Plot 1: 2D Field visualization with log scaling and fun colors
-    ax1 = plt.subplot(131)
+    # Plot 1: 2D Field visualization
+    ax1 = plt.subplot(2, 2, 1)
     # Use log scaling for better visualization of multifractal structure
     field_log = np.log10(np.maximum(field_for_display, np.min(field_for_display[field_for_display > 0])))
     im = ax1.pcolormesh(field_log, cmap='plasma', shading='auto')
@@ -114,32 +107,53 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     ax1.set_aspect('equal')
     
     # Plot 2: Power Spectrum
-    ax2 = plt.subplot(132)
-    ax2.loglog(binned_freq, binned_psd, 'b-', alpha=0.8, label='Average Simulation Spectrum')
-    ax2.loglog(binned_freq, theoretical_spectrum, 'g--', alpha=0.8, label='Theoretical Multifractal Spectrum')
-    ax2.loglog(binned_freq, theoretical_fBm_spec, 'r--', alpha=0.8, label='Theoretical fBm Spectrum')
+    ax2 = plt.subplot(2, 2, 2)
+    ax2.loglog(freqs, psd, 'b-', alpha=0.8, label=f'Spectral: H={H_spectral:.3f}±{H_spectral_err:.3f}')
     
-    ax2.set_title('1D Power Spectrum (row-averaged)')
+    # Create theoretical line with slope -beta anchored at center point
+    center_idx = len(freqs) // 2
+    center_freq, center_psd = freqs[center_idx], psd[center_idx]
+    beta_theoretical = 2*H - K(2, alpha, C1) + 1
+    theoretical_line = center_psd * (freqs / center_freq) ** (-beta_theoretical)
+    ax2.loglog(freqs, theoretical_line, 'g--', alpha=0.8, label=f'Theory: β={beta_theoretical:.2f}')
+    
+    ax2.set_title('Power Spectrum')
     ax2.set_xlabel('Frequency')
     ax2.set_ylabel('Power')
     ax2.grid(True, which="both", ls="-", alpha=0.2)
     ax2.legend()
     
-    # Add resolution marker
-    nyquist_freq = 0.5
-    ax2.axvline(x=nyquist_freq, color='black', linestyle='-', linewidth=2, alpha=0.8, label='Nyquist')
+    # Plot 3: Haar Fluctuation
+    ax3 = plt.subplot(2, 2, 3)
+    ax3.loglog(lags_haar, fluct, 'r-', alpha=0.8, label=f'Haar: H={H_haar:.3f}±{H_haar_err:.3f}')
     
-    # Plot 3: Spectrum Ratio (Error analysis)
-    ax3 = plt.subplot(133)
-    ratio = binned_psd / theoretical_spectrum
-    ax3.loglog(binned_freq, ratio, 'b-', alpha=0.8, label='Simulation/Theory Ratio')
-    ax3.loglog(binned_freq, np.ones_like(binned_freq), 'g--', alpha=0.8, label='Perfect Agreement')
-    ax3.set_ylim(1e-2, 1e2)
-    ax3.set_title('Spectrum Agreement')
-    ax3.set_xlabel('Frequency')
-    ax3.set_ylabel('Spectrum Ratio')
+    # Create theoretical line with slope H anchored at center point
+    center_idx_haar = len(lags_haar) // 2
+    center_lag, center_fluct = lags_haar[center_idx_haar], fluct[center_idx_haar]
+    theoretical_haar_line = center_fluct * (lags_haar / center_lag) ** H
+    ax3.loglog(lags_haar, theoretical_haar_line, 'g--', alpha=0.8, label=f'Theory: H={H:.2f}')
+    
+    ax3.set_title('Haar Fluctuation')
+    ax3.set_xlabel('Lag')
+    ax3.set_ylabel('Fluctuation')
     ax3.grid(True, which="both", ls="-", alpha=0.2)
     ax3.legend()
+    
+    # Plot 4: Structure Function
+    ax4 = plt.subplot(2, 2, 4)
+    ax4.loglog(lags_sf, sf_vals, 'g-', alpha=0.8, label=f'SF: H={H_sf:.3f}±{H_sf_err:.3f}')
+    
+    # Create theoretical line with slope H anchored at center point
+    center_idx_sf = len(lags_sf) // 2
+    center_lag_sf, center_sf = lags_sf[center_idx_sf], sf_vals[center_idx_sf]
+    theoretical_sf_line = center_sf * (lags_sf / center_lag_sf) ** H
+    ax4.loglog(lags_sf, theoretical_sf_line, 'g--', alpha=0.8, label=f'Theory: H={H:.2f}')
+    
+    ax4.set_title('Structure Function')
+    ax4.set_xlabel('Lag')
+    ax4.set_ylabel('SF')
+    ax4.grid(True, which="both", ls="-", alpha=0.2)
+    ax4.legend()
     
     plt.tight_layout()
     plt.show()
@@ -151,7 +165,13 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     print(f"  Mean: {np.mean(field_for_display):.3f}")
     print(f"  Std: {np.std(field_for_display):.3f}")
     
-    return frequencies, avg_spectrum, theoretical_spectrum
+    return {
+        'theoretical_H': theoretical_H,
+        'spectral': {'H': H_spectral, 'H_err': H_spectral_err, 'freqs': freqs, 'psd': psd},
+        'haar': {'H': H_haar, 'H_err': H_haar_err, 'lags': lags_haar, 'fluct': fluct},
+        'structure_function': {'H': H_sf, 'H_err': H_sf_err, 'lags': lags_sf, 'sf_vals': sf_vals},
+        'field': field_for_display
+    }
 
 def main():
     # Parse command line arguments
@@ -210,9 +230,9 @@ def main():
     if not (-1 < H < 1):
         print("Error: H must be in (-1, 1)")
         sys.exit(1)
-    if C1 <= 0:
-        print("Error: C1 must be positive")
-        sys.exit(1)
+    # if C1 <= 0:
+    #     print("Error: C1 must be positive")
+    #     sys.exit(1)
     
     print("="*60)
     print("FIF_2D Spectral Analysis and Visualization")
@@ -223,7 +243,7 @@ def main():
     
     # Run the analysis
     try:
-        freq, sim_spec, theo_spec = calculate_2d_spectrum_and_visualize(
+        results = calculate_2d_spectrum_and_visualize(
             alpha, C1, H, size=size, n_samples=nsims
         )
         print("\nAnalysis completed successfully!")
