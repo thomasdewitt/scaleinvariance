@@ -7,18 +7,17 @@ from .. import device
 def acausal_fBm_1D(size, H):
     """
     Generate fractional Brownian motion by spectral synthesis.
-
+    
     Creates fBm with power spectrum |k|^(-β) where β = 2H + 1.
     Uses random phases and inverse FFT to generate periodic time series.
-
+    
     Parameters
     ----------
     size : int
         Number of points (must be power of 2)
     H : float
-        Hurst parameter. Typical range is (0, 1) for fBm, but negative values
-        are also supported (H < 0 gives blue noise with β < 1).
-
+        Hurst parameter (0 < H < 1)
+        
     Returns
     -------
     numpy.ndarray
@@ -54,18 +53,17 @@ def acausal_fBm_1D(size, H):
 def acausal_fBm_2D(size, H):
     """
     Generate 2D fractional Brownian motion by spectral synthesis.
-
+    
     Creates 2D fBm with rotationally symmetric power spectrum |k|^(-β) where β = 2H + 2.
     Uses random phases and inverse FFT to generate periodic 2D random field.
-
+    
     Parameters
     ----------
     size : tuple of ints or int
         Size of 2D array. If int, creates square array. Each dimension must be power of 2.
     H : float
-        Hurst parameter. Typical range is (0, 1) for fBm, but negative values
-        are also supported (H < 0 gives blue noise with β < 2).
-
+        Hurst parameter (0 < H < 1)
+        
     Returns
     -------
     numpy.ndarray
