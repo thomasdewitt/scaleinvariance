@@ -239,10 +239,10 @@ def periodic_convolve(signal, kernel):
     Parameters:
         signal (array-like): Input signal array.
         kernel (array-like): Convolution kernel array.
-    
+
     Returns:
         ndarray: The result of the periodic convolution.
-      
+
     Raises:
         ValueError: If signal and kernel lengths do not match.
     """
@@ -250,13 +250,16 @@ def periodic_convolve(signal, kernel):
         signal = torch.as_tensor(signal, device=device, dtype=dtype)
     if not isinstance(kernel, torch.Tensor):
         kernel = torch.as_tensor(kernel, device=device, dtype=dtype)
-    
+
     if signal.numel() != kernel.numel():
         raise ValueError("Signal and kernel must have the same length for periodic convolution.")
-    
+
+    # Shift kernel so zero-lag is at index 0 (required for FFT convolution)
+    kernel = torch.fft.ifftshift(kernel)
+
     fft_signal = torch_fft(signal)
     fft_kernel = torch_fft(kernel)
-    
+
     convolved = torch_ifft(fft_signal * fft_kernel)
     return convolved.real
 
@@ -268,10 +271,10 @@ def periodic_convolve_2d(signal, kernel):
     Parameters:
         signal (torch.Tensor): Input signal array (2D).
         kernel (torch.Tensor): Convolution kernel array (2D).
-    
+
     Returns:
         torch.Tensor: The result of the periodic convolution.
-      
+
     Raises:
         ValueError: If signal and kernel shapes do not match.
     """
@@ -279,33 +282,36 @@ def periodic_convolve_2d(signal, kernel):
         signal = torch.as_tensor(signal, device=device, dtype=dtype)
     if not isinstance(kernel, torch.Tensor):
         kernel = torch.as_tensor(kernel, device=device, dtype=dtype)
-    
+
     if signal.shape != kernel.shape:
         raise ValueError("Signal and kernel must have the same shape for periodic convolution.")
-    
+
+    # Shift kernel so zero-lag is at index (0,0) (required for FFT convolution)
+    kernel = torch.fft.ifftshift(kernel)
+
     fft_signal = torch.fft.fft2(signal)
     fft_kernel = torch.fft.fft2(kernel)
-    
+
     convolved = torch.fft.ifft2(fft_signal * fft_kernel)
     return convolved.real
 
-def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, correct_for_finite_size_effects=True):
+def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, correct_for_finite_size_effects=True, periodic=True):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
-    
+
     FIF is a multiplicative cascade model that generates multifractal fields with
-    specified Hurst exponent H, intermittency parameter C1, and Levy index alpha. 
+    specified Hurst exponent H, intermittency parameter C1, and Levy index alpha.
     The method follows Lovejoy & Schertzer 2010, including finite-size corrections.
 
     Returns field normalized by mean.
-    
+
     Algorithm:
         1. Generate extremal Lévy noise with stability parameter alpha
         2. Convolve with corrected kernel (finite-size corrected |k|^(-1/alpha)) to create log-flux
-        3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux  
+        3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux
         4. For H ≠ 0: Convolve flux with kernel |k|^(-1+H) to get observable
         5. For H < 0: Apply differencing to handle negative Hurst exponents
-    
+
     Parameters
     ----------
     size : int
@@ -313,7 +319,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     alpha : float
         Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
     C1 : float
-        Codimension of the mean, controls intermittency strength. 
+        Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
     H : float
         Hurst exponent in (-1, 1). Controls correlation structure.
@@ -327,12 +333,15 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     correct_for_finite_size_effects : bool, optional
         Whether to use corrections for finite-size effects as described in Lovejoy & Schertzer 2010.
         Default True. Essentially the only reason for False is illustration of the method.
-    
+    periodic : bool, optional
+        If True, doubles simulation size then returns only first half to eliminate periodicity artifacts.
+        If False, returns full periodic simulation. Default True.
+
     Returns
     -------
     numpy.ndarray
         1D array of simulated multifractal field values
-        
+
     Raises
     ------
     ValueError
@@ -341,12 +350,12 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
         If C1 <= 0 (must be positive for multifractal behavior)
     ValueError
         If provided levy_noise doesn't match specified size
-        
+
     Examples
     --------
-    >>> # Basic multifractal with strong intermittency  
+    >>> # Basic multifractal with strong intermittency
     >>> fif = FIF_1D(1024, alpha=1.8, C1=0.1, H=0.3)
-    
+
     Notes
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
@@ -354,11 +363,14 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     """
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
-    size *= 2   # duplicate to eliminate periodicity
 
+    output_size = size
+    if periodic:
+        size *= 2   # duplicate to eliminate periodicity
 
-    if C1 == 0 and not causal: 
-        return acausal_fBm_1D(size, H)[:size//2]
+    if C1 == 0 and not causal:
+        result = acausal_fBm_1D(size, H)
+        return result[:output_size] if periodic else result
     
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
@@ -380,12 +392,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
 
     if levy_noise is None:
         noise = extremal_levy(alpha, size=size)
-    else: 
+    else:
         if levy_noise.size()[0] != size:
             raise ValueError("Provided levy_noise must match the specified size.")
         noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
 
-    if outer_scale is None: outer_scale = size//2
+    if outer_scale is None:
+        outer_scale = output_size
 
     # Create kernel 1
     if correct_for_finite_size_effects:
@@ -424,8 +437,10 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     del scaled
 
     if H == 0:
-        # Normalize
-        flux = flux[size//2:] /torch.mean(flux)      # eliminate periodicity
+        # Normalize - slice first (if periodic), then normalize by mean
+        if periodic:
+            flux = flux[size//2:]      # eliminate periodicity
+        flux = flux / torch.mean(flux)
         return flux.cpu().numpy()
     
     # Create kernel 2 only for H \ne 0 case
@@ -447,14 +462,21 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     kernel2[:lo] = 0
     kernel2[hi:] = 0
 
-    observable = periodic_convolve(flux, kernel2)[size//2:]     # eliminate periodicity
+    observable = periodic_convolve(flux, kernel2)
+    if periodic:
+        observable = observable[size//2:]     # eliminate periodicity
     del flux, kernel2
 
     if H_int == -1:
+        # Apply differencing for H<0
         observable = torch.diff(observable)
-
-    # Normalize by mean
-    observable = observable/torch.mean(observable)
+        # Duplicate last value to maintain original size
+        observable = torch.cat([observable, observable[-1:]])
+        # Normalize to zero mean (increments should have zero mean)
+        observable = observable - torch.mean(observable)
+    else:
+        # Normalize to unit mean (levels should have unit mean)
+        observable = observable / torch.mean(observable)
 
     return observable.cpu().numpy()
 
