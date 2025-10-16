@@ -670,7 +670,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
 
     return observable.cpu().numpy()
 
-def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_construction_method='LS2010'):
+def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_construction_method='LS2010', periodic=False):
     """
     Generate a 2D Fractionally Integrated Flux (FIF) multifractal simulation.
     
@@ -705,6 +705,10 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
         Method for constructing convolution kernels. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
         Note: 'naive' method is not yet implemented for 2D.
+    periodic : bool, optional
+        If False (default), doubles domain size internally and returns one quadrant to
+        suppress periodic artifacts. If True, keeps the simulation strictly periodic
+        with the provided size.
     
     Returns
     -------
@@ -737,23 +741,24 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     """
     # Handle size parameter
     if isinstance(size, int):
-        height, width = size, size
+        output_height, output_width = size, size
     else:
-        height, width = size
+        output_height, output_width = size
 
-    if C1 == 0: 
-        return acausal_fBm_2D((height*2, width*2), H)[:height,:width]
+    # Determine simulation domain size
+    sim_height = output_height if periodic else output_height * 2
+    sim_width = output_width if periodic else output_width * 2
 
-    # Double size to elimiate periodicity; at end, only one quadrant is returned
-    height *= 2
-    width *= 2
+    if C1 == 0:
+        fbm = acausal_fBm_2D((sim_height, sim_width), H)
+        return fbm if periodic else fbm[:output_height, :output_width]
 
-    if outer_scale is None: 
-        outer_scale = max(height, width)
+    if outer_scale is None:
+        outer_scale = max(sim_height, sim_width)
         
-    if height % 2 != 0 or width % 2 != 0:
+    if sim_height % 2 != 0 or sim_width % 2 != 0:
         raise ValueError("Height and width must be even numbers; powers of 2 are recommended.")
-    
+
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
 
@@ -768,16 +773,23 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
         raise ValueError("H must be a number between 0 and 1.")
 
     if levy_noise is None:
-        noise = extremal_levy(alpha, size=height * width).reshape(height, width)
-    else: 
-        if levy_noise.shape != (height, width):
-            raise ValueError("Provided levy_noise must match the specified size.")
-        noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
+        noise = extremal_levy(alpha, size=sim_height * sim_width).reshape(sim_height, sim_width)
+    else:
+        levy_tensor = torch.as_tensor(levy_noise, device=device, dtype=dtype)
+        if periodic:
+            if levy_tensor.shape != (sim_height, sim_width):
+                raise ValueError("Provided levy_noise must match the specified size.")
+            noise = levy_tensor
+        else:
+            if levy_tensor.shape != (output_height, output_width):
+                raise ValueError("Provided levy_noise must match the specified size.")
+            noise = extremal_levy(alpha, size=sim_height * sim_width).reshape(sim_height, sim_width)
+            noise[:output_height, :output_width] = levy_tensor
 
 
     # Create kernel 1 using specified method
     if kernel_construction_method == 'LS2010':
-        kernel1 = create_flux_kernel_2d_LS2010(height, width, alpha, outer_scale)
+        kernel1 = create_flux_kernel_2d_LS2010(sim_height, sim_width, alpha, outer_scale)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
     
@@ -793,11 +805,11 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     if H == 0:
         # Normalize and return first quadrant only to eliminate periodicity
         flux = flux / torch.mean(flux)
-        return flux[:height//2, :width//2].cpu().numpy()
-    
+        return flux.cpu().numpy() if periodic else flux[:output_height, :output_width].cpu().numpy()
+
     # Create kernel 2 using specified method
     if kernel_construction_method == 'LS2010':
-        kernel2 = create_H_kernel_2d_LS2010(height, width, H, outer_scale)
+        kernel2 = create_H_kernel_2d_LS2010(sim_height, sim_width, H, outer_scale)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
     
@@ -807,5 +819,5 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     # Normalize by mean
     observable = observable / torch.mean(observable)
 
-    # return first quadrant only to eliminate periodicity
-    return observable[:height//2, :width//2].cpu().numpy()
+    # Return full periodic field or first quadrant to eliminate periodicity
+    return observable.cpu().numpy() if periodic else observable[:output_height, :output_width].cpu().numpy()
