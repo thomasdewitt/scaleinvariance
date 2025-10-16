@@ -2,14 +2,14 @@ import numpy as np
 from scaleinvariance import FIF_1D, two_point_intermittency_exponent
 
 # Test parameters
-size = 2**22
-n_realizations = 10
+size = 2**25
+n_realizations = 2
 C1_values = [0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.6]
 alpha = 2.0
 H = 1/3
 order = 2
 min_sep = 2**9
-max_sep = 2**17
+max_sep = 2**20
 
 print(f"Testing C1 estimation on FIF_1D (size={size}, n={n_realizations} realizations each)")
 print(f"Scaling range: {min_sep} to {max_sep}, order={order}\n")
