@@ -365,10 +365,12 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
         raise ValueError("size must be an even number; a power of 2 is recommended.")
 
     output_size = size
-    if periodic:
+    if not periodic:
         size *= 2   # duplicate to eliminate periodicity
 
     if C1 == 0 and not causal:
+        if levy_noise is not None: 
+            raise ValueError('noise argument not supported for C1=0')
         result = acausal_fBm_1D(size, H)
         return result[:output_size] if periodic else result
     
@@ -393,10 +395,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     if levy_noise is None:
         noise = extremal_levy(alpha, size=size)
     else:
-        if levy_noise.size()[0] != size:
+        if levy_noise.size()[0] != output_size:
             raise ValueError("Provided levy_noise must match the specified size.")
-        noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
-
+        # if aperiodic is requested, need to pad noise with more noise 
+        if not periodic:
+            noise = torch.cat([torch.as_tensor(levy_noise, device=device, dtype=dtype),extremal_levy(alpha, size=output_size)])
+        else:
+            noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
     if outer_scale is None:
         outer_scale = output_size
 
@@ -438,8 +443,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
 
     if H == 0:
         # Normalize - slice first (if periodic), then normalize by mean
-        if periodic:
-            flux = flux[size//2:]      # eliminate periodicity
+        if not periodic:
+            flux = flux[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
         flux = flux / torch.mean(flux)
         return flux.cpu().numpy()
     
@@ -463,8 +468,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, c
     kernel2[hi:] = 0
 
     observable = periodic_convolve(flux, kernel2)
-    if periodic:
-        observable = observable[size//2:]     # eliminate periodicity
+    if not periodic:
+        observable = observable[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
     del flux, kernel2
 
     if H_int == -1:
