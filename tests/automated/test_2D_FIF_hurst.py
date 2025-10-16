@@ -11,13 +11,13 @@ from scaleinvariance import FIF_2D, structure_function_hurst, spectral_hurst
 
 # Test configuration
 KERNEL_METHOD = 'LS2010'  # Currently only 'LS2010' supported for 2D
-HURST_METHOD = 'spectral'  # 'structure_function' or 'spectral'
+HURST_METHOD = 'structure_function'  # 'structure_function' or 'spectral'
 N_REALIZATIONS = 10
 SIZE = 2**11  # 2048x2048 (reasonable for 2D)
 TOLERANCE = 0.05
 
 # Parameter space
-H_VALUES = [0.0, 0.3, 0.7]
+H_VALUES = [0., 0.3, 0.7]
 C1_VALUES = [0.0, 0.001, 0.1]
 ALPHA_VALUES = [2.0, 1.5]
 
@@ -47,7 +47,7 @@ def test_combination(H, C1, alpha):
     realizations = []
     for i in range(N_REALIZATIONS):
         fif = FIF_2D(SIZE, alpha, C1, H,
-                     kernel_construction_method=KERNEL_METHOD)
+                     kernel_construction_method=KERNEL_METHOD, periodic=False)
         realizations.append(fif)
 
     # Stack along axis 0: shape = (N_REALIZATIONS, SIZE, SIZE)
