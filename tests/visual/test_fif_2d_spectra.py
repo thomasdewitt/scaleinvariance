@@ -238,7 +238,7 @@ def main():
     print("FIF_2D Spectral Analysis and Visualization")
     print("="*60)
     print(f"Parameters: α={alpha:.3f}, C₁={C1:.3f}, H={H:.3f}")
-    print(f"Domain size: {size}×{size}")
+    print(f"Domain size: {size//2}×{size*2}")
     print("="*60)
     
     # Run the analysis

@@ -80,8 +80,8 @@ def main():
         if i%2 == 0: print(f"  Simulation {i+1}/{n_sims}...",)
         
         # Generate corrected FIF simulation
-        fif_field = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal, 
-                                         correct_for_finite_size_effects=True)
+        fif_field = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
+                                         kernel_construction_method='LS2010')
         all_fif_data.append(fif_field)
     
     # Concatenate all simulations and analyze with spectral_hurst
@@ -98,8 +98,8 @@ def main():
         if i%2 == 0: print(f"  Uncorrected simulation {i+1}/{n_sims}...",)
         
         # Generate uncorrected FIF simulation
-        fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal, 
-                                                      correct_for_finite_size_effects=False)
+        fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
+                                                      kernel_construction_method='naive')
         all_fif_uncorrected_data.append(fif_field_uncorrected)
     
     # Concatenate uncorrected simulations and analyze

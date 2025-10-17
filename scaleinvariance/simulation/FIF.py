@@ -41,226 +41,186 @@ def extremal_levy(alpha, size=1):
     )
     return sample
 
-def create_corrected_kernel(distance, alpha):
+# LS 2010 kernels
+
+def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power=None):
     """
-    Create a finite-size corrected kernel for fractionally integrated flux simulations.
-    
-    This function implements the correction method from Lovejoy & Schertzer (2010) 
-    "On the simulation of continuous in scale universal multifractals, Part II".
-    
-    The method reduces leading-order finite-size correction terms that 
-    cause deviations from pure scaling behavior in fractionally integrated flux model.
-    It modifies the basic power-law singularity by applying exponential 
-    cutoffs and normalization corrections to reduce boundary effects.
-    
-    Works for both 1D and 2D distance arrays.
-    For 1D: expects dx=2 spacing (e.g., [..., 3, 1, 3, 5, 7, 9, ...])
-    For 2D: expects circularly symmetric distance array
-    
-    Parameters:
-    -----------
+    Apply Lovejoy & Schertzer 2010 finite-size correction to a power-law kernel.
+
+    This implements the correction method from Lovejoy & Schertzer (2010)
+    "On the simulation of continuous in scale universal multifractals, Part II",
+    following Lovejoy's Frac.m implementation.
+
+    The method reduces leading-order finite-size correction terms by applying
+    exponential cutoffs and normalization corrections to reduce boundary effects.
+
+    Works for both 1D and 2D distance arrays with dx=2 spacing.
+
+    Parameters
+    ----------
     distance : torch.Tensor
-        Distance array (1D or 2D)
-    alpha : float  
-        Lévy index parameter (1 < alpha <= 2)
-    causal : bool
-        Whether the resulting kernel should be causal.
-        
-    Returns:
-    --------
+        Distance array (1D or 2D), expects dx=2 spacing
+    exponent : float
+        Power-law exponent for base kernel (e.g., -1/α' for flux, -1+H for H kernel)
+    norm_ratio_exponent : float
+        Exponent for ratio in normalization factor (e.g., -1/α for flux, -H for H kernel)
+    final_power : float, optional
+        Final power transformation to apply (e.g., 1/(α-1) for flux kernel).
+        If None, no transformation is applied (kernel remains as corrected).
+
+    Returns
+    -------
     torch.Tensor
-        Corrected singularity kernel for convolution
+        Corrected kernel
     """
     if not isinstance(distance, torch.Tensor):
         distance = torch.as_tensor(distance, device=device, dtype=dtype)
 
-    
-    # Determine dimensionality and set appropriate parameters
+    # Determine domain size for cutoff calculation
     if distance.ndim == 1:
-        # 1D case - use grid size for cutoff calculation
         domain_size = distance.numel()
-        norm_exponent = 1
-        singularity_exponent = -1  # |x|^(-1/α') for 1D
     elif distance.ndim == 2:
-        # 2D case - use domain size (not total elements) for cutoff calculation
         domain_size = min(distance.shape)
-        norm_exponent = 2
-        singularity_exponent = -2  # |r|^(-2/α') for 2D
     else:
         raise ValueError("Distance array must be 1D or 2D")
-    
+
     ratio = 2.0
-    alpha_t = torch.tensor(alpha, dtype=dtype, device=device)
-    alpha_prime = 1.0 / (1 - 1/alpha_t)
     cutoff_length = domain_size / 2.0
     cutoff_length2 = cutoff_length / ratio
-    
+
     # Calculate exponential cutoffs
     exponential_cutoff = torch.exp(torch.clamp(-(distance/cutoff_length)**4, max=0, min=-200))
     exponential_cutoff2 = torch.exp(torch.clamp(-(distance/cutoff_length2)**4, max=0, min=-200))
-    
-    # Base singularity: |x|^(-1/α') for 1D, |r|^(-2/α') for 2D
-    convolution_kernel = distance**(singularity_exponent/alpha_prime)
-    
-    # Calculate normalization constants
-    smoothed_kernel = convolution_kernel * exponential_cutoff
-    norm_constant1 = torch.sum(smoothed_kernel)
-    
-    smoothed_kernel = convolution_kernel * exponential_cutoff2
-    norm_constant2 = torch.sum(smoothed_kernel)
-    
-    # Normalization factor
-    normalization_factor = (ratio**(-norm_exponent/alpha_t) * norm_constant1 - norm_constant2) / (ratio**(-norm_exponent/alpha_t) - 1)
-    
-    # Final smoothing
-    final_filter = torch.exp(torch.clamp(-distance/3.0, max=0, min=-200))
-    smoothed_kernel = convolution_kernel * final_filter
-    filter_integral = torch.sum(smoothed_kernel)
-    
-    correction_factor = -normalization_factor / filter_integral
-    convolution_kernel = (convolution_kernel * (1 + correction_factor * final_filter))**(1/(alpha_t - 1))
-    
-    return convolution_kernel
 
-def create_corrected_H_kernel(distance, H, size, causal):
-    """
-    Create a finite-size corrected kernel for the second (H) fractional integral.
-    
-    This function implements the correction method from Lovejoy & Schertzer (2010)
-    for the second integral kernel. It reduces finite-size effects
-    by applying exponential cutoffs and normalization corrections.
-    
-    Works for both 1D and 2D distance arrays.
-    For 1D: kernel is |x|^(-1+H)
-    For 2D: kernel is |r|^(-2+H)
-    
-    Parameters:
-    -----------
-    distance : torch.Tensor
-        Distance array (1D or 2D)
-    H : float
-        Hurst exponent parameter (-1 < H < 1)
-    size : int
-        Size of the simulation domain
-        
-    Returns:
-    --------
-    torch.Tensor
-        Corrected H-integral kernel for convolution
-    """
-    if not isinstance(distance, torch.Tensor):
-        distance = torch.as_tensor(distance, device=device, dtype=dtype)
-    
-    # Determine dimensionality and set appropriate parameters
-    if distance.ndim == 1:
-        singularity_exponent = -1 + H  # |x|^(-1+H) for 1D
-        ratio_exponent = -H  # For 1D normalization
-    elif distance.ndim == 2:
-        singularity_exponent = -2 + H  # |r|^(-2+H) for 2D
-        ratio_exponent = -H  # For 2D normalization (same as 1D for H)
-    else:
-        raise ValueError("Distance array must be 1D or 2D")
-    
-    lambda_equiv = size
-    ratio = 2.0
-    
-    # Cutoff lengths (following Lovejoy's FracDiffH)
-    outer_cutoff = lambda_equiv / 2.0
-    outer_cutoff2 = outer_cutoff / ratio
-    inner_cutoff = 0.01 if causal else 1.0
-    smoothing_cutoff = lambda_equiv / 4.0
-    
     # Base singularity kernel
-    # Handle zero by setting to 1 (will be zeroed by cutoffs anyway)
-    if distance.ndim == 1:
-        abs_distance = torch.abs(distance)
-    else:  # 2D case
-        abs_distance = distance  # Already positive radial distance
-    
-    abs_distance_safe = torch.where(abs_distance == 0, torch.ones_like(abs_distance), abs_distance)
-    base_kernel = abs_distance_safe ** singularity_exponent
-    
-    # Inner cutoff to remove singularity at origin
-    # Using smooth cutoff: 1 - exp(-(|r|/inner_cutoff)^2)
-    inner_cutoff_factor = 1.0 - torch.exp(
-        torch.clamp(-(abs_distance_safe/inner_cutoff)**2, max=0, min=-200)
-    )
-    
-    # Outer exponential cutoffs
-    outer_exp_cutoff = torch.exp(
-        torch.clamp(-(abs_distance_safe/outer_cutoff)**4, max=0, min=-200)
-    )
-    outer_exp_cutoff2 = torch.exp(
-        torch.clamp(-(abs_distance_safe/outer_cutoff2)**4, max=0, min=-200)
-    )
-    
+    base_kernel = distance**exponent
+
     # Calculate normalization constants
-    smoothed_kernel1 = base_kernel * outer_exp_cutoff * inner_cutoff_factor
-    t1 = torch.sum(smoothed_kernel1)
-    
-    smoothed_kernel2 = base_kernel * outer_exp_cutoff2 * inner_cutoff_factor
-    t2 = torch.sum(smoothed_kernel2)
-    
-    # Compute normalization factor
-    norm_factor = (t1 * ratio**ratio_exponent - t2) / (ratio**ratio_exponent - 1)
-    
-    # Final smoothing function for correction
-    final_smooth = inner_cutoff_factor * torch.exp(
-        torch.clamp(-abs_distance_safe/smoothing_cutoff, max=0, min=-200)
-    )
-    
-    # Calculate correction coefficient
-    smoothed_final = base_kernel * inner_cutoff_factor * outer_exp_cutoff2 * final_smooth
-    GH = torch.sum(smoothed_final)
-    
-    # Avoid division by zero
-    if torch.abs(GH) < 1e-12:
-        correction_coeff = 0.0
-    else:
-        correction_coeff = -norm_factor / GH
-    
-    # Apply correction to kernel
-    corrected_kernel = base_kernel * (1 + correction_coeff * final_smooth)
-    
-    # For numerical stability, ensure kernel is not negative
-    corrected_kernel = torch.where(
-        corrected_kernel > 0, 
-        corrected_kernel, 
-        torch.zeros_like(corrected_kernel)
-    )
-    
+    smoothed_kernel1 = base_kernel * exponential_cutoff
+    norm_constant1 = torch.sum(smoothed_kernel1)
+
+    smoothed_kernel2 = base_kernel * exponential_cutoff2
+    norm_constant2 = torch.sum(smoothed_kernel2)
+
+    # Normalization factor
+    ratio_factor = ratio**norm_ratio_exponent
+    normalization_factor = (ratio_factor * norm_constant1 - norm_constant2) / (ratio_factor - 1)
+
+    # Final smoothing filter
+    final_filter = torch.exp(torch.clamp(-distance/3.0, max=0, min=-200))
+    smoothed_kernel = base_kernel * final_filter
+    filter_integral = torch.sum(smoothed_kernel)
+
+    # Apply correction
+    correction_factor = -normalization_factor / filter_integral
+    corrected_kernel = base_kernel * (1 + correction_factor * final_filter)
+
+    # Apply final power transformation if specified
+    if final_power is not None:
+        corrected_kernel = corrected_kernel ** final_power
+
     return corrected_kernel
 
-def create_flux_kernel_LS2010(size, alpha, causal, outer_scale):
+def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None, final_power=None):
     """
-    Create flux kernel using Lovejoy & Schertzer 2010 finite-size corrections.
+    Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
+
+    Unified function for creating both flux and H kernels with LS2010 corrections.
+    Handles both 1D and 2D cases automatically.
 
     Parameters
     ----------
-    size : int
-        Size of kernel array
-    alpha : float
-        Lévy stability parameter
-    causal : bool
-        Whether to make kernel causal
-    outer_scale : int
-        Large-scale cutoff
+    size : int or tuple
+        For 1D: int specifying kernel size
+        For 2D: tuple (height, width)
+    exponent : float
+        Power-law exponent for base kernel
+        Examples: -1/α' for 1D flux, -2/α' for 2D flux, -1+H for 1D H kernel, -2+H for 2D H kernel
+    norm_ratio_exponent : float
+        Exponent for ratio in normalization factor
+        Examples: -1/α for 1D flux, -2/α for 2D flux, -H for H kernels
+    causal : bool, optional
+        Whether to make kernel causal (1D only). Default False.
+    outer_scale : int, optional
+        Large-scale cutoff. If None, no outer scale cutoff is applied.
+    final_power : float, optional
+        Final power transformation (e.g., 1/(α-1) for flux kernel). Default None.
 
     Returns
     -------
     torch.Tensor
-        Flux kernel ready for convolution
+        Corrected kernel ready for convolution
     """
-    # Create distance array for corrected kernel (odd numbers, dx=2)
-    position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
-    distance_corrected = torch.abs(position_range)
-    kernel = create_corrected_kernel(distance_corrected, alpha)
+    # Handle 1D vs 2D
+    if isinstance(size, int):
+        # 1D case
+        position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
+        distance = torch.abs(position_range)
+        kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
+
+        # Apply outer scale cutoff
+        if outer_scale is not None:
+            lo = size//2 - outer_scale//2
+            hi = size//2 + outer_scale//2
+            kernel[:lo] = 0
+            kernel[hi:] = 0
+
+        # Apply causality
+        if causal:
+            kernel[:size//2] = 0
+
+    else:
+        # 2D case
+        height, width = size
+        y_coords = torch.arange(-(height - 1), height, 2, dtype=dtype, device=device)
+        x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
+        Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
+        distance = torch.sqrt(X**2 + Y**2)
+        kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
+
+        # Apply outer scale cutoff (convert distance to units of dx=1)
+        if outer_scale is not None:
+            kernel[distance*2 > outer_scale] = 0
+
+    return kernel
+
+# Naive kernel construction methods
+
+def create_kernel_naive(size, exponent, causal=False, outer_scale=None):
+    """
+    Create kernel using simple power-law (no finite-size corrections).
+
+    Unified function for creating both flux and H kernels with naive power-law.
+    Currently only supports 1D.
+
+    Parameters
+    ----------
+    size : int
+        Size of kernel array (1D only for naive method)
+    exponent : float
+        Power-law exponent for kernel
+        Examples: -1/α for flux, -1+H for H kernel
+    causal : bool, optional
+        Whether to make kernel causal. Default False.
+    outer_scale : int, optional
+        Large-scale cutoff. If None, no outer scale cutoff is applied.
+
+    Returns
+    -------
+    torch.Tensor
+        Power-law kernel ready for convolution
+    """
+    # Create distance array (dx=1 spacing)
+    distance = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
+    distance[distance==0] = 1  # Avoid singularity at origin
+    kernel = distance ** exponent
 
     # Apply outer scale cutoff
-    lo = size//2 - outer_scale//2
-    hi = size//2 + outer_scale//2
-    kernel[:lo] = 0
-    kernel[hi:] = 0
+    if outer_scale is not None:
+        lo = size//2 - outer_scale//2
+        hi = size//2 + outer_scale//2
+        kernel[:lo] = 0
+        kernel[hi:] = 0
 
     # Apply causality
     if causal:
@@ -268,177 +228,7 @@ def create_flux_kernel_LS2010(size, alpha, causal, outer_scale):
 
     return kernel
 
-def create_flux_kernel_naive(size, alpha, causal, outer_scale):
-    """
-    Create flux kernel using simple power-law (no finite-size corrections).
-
-    Parameters
-    ----------
-    size : int
-        Size of kernel array
-    alpha : float
-        Lévy stability parameter
-    causal : bool
-        Whether to make kernel causal
-    outer_scale : int
-        Large-scale cutoff
-
-    Returns
-    -------
-    torch.Tensor
-        Flux kernel ready for convolution
-    """
-    t = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
-    t[t==0] = 1
-    kernel = t ** (-1/alpha)
-
-    # Apply outer scale cutoff
-    lo = size//2 - outer_scale//2
-    hi = size//2 + outer_scale//2
-    kernel[:lo] = 0
-    kernel[hi:] = 0
-
-    # Apply causality
-    if causal:
-        kernel[:size//2] = 0
-
-    return kernel
-
-def create_H_kernel_LS2010(size, H, causal, outer_scale):
-    """
-    Create H-kernel using Lovejoy & Schertzer 2010 finite-size corrections.
-
-    Parameters
-    ----------
-    size : int
-        Size of kernel array
-    H : float
-        Hurst exponent (after shift for negative H)
-    causal : bool
-        Whether to make kernel causal
-    outer_scale : int
-        Large-scale cutoff
-
-    Returns
-    -------
-    torch.Tensor
-        H-kernel ready for convolution
-    """
-    # Create distance array for corrected kernel (odd numbers, dx=2)
-    position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
-    distance_corrected = torch.abs(position_range)
-    kernel = create_corrected_H_kernel(distance_corrected, H, size, causal)
-
-    # Apply outer scale cutoff
-    lo = size//2 - outer_scale//2
-    hi = size//2 + outer_scale//2
-    kernel[:lo] = 0
-    kernel[hi:] = 0
-
-    # Apply causality
-    if causal:
-        kernel[:size//2] = 0
-
-    return kernel
-
-def create_H_kernel_naive(size, H, causal, outer_scale):
-    """
-    Create H-kernel using simple power-law (no finite-size corrections).
-
-    Parameters
-    ----------
-    size : int
-        Size of kernel array
-    H : float
-        Hurst exponent (after shift for negative H)
-    causal : bool
-        Whether to make kernel causal
-    outer_scale : int
-        Large-scale cutoff
-
-    Returns
-    -------
-    torch.Tensor
-        H-kernel ready for convolution
-    """
-    distance_standard = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
-    distance_standard[distance_standard==0] = 1
-    kernel = distance_standard ** (-1 + H)
-
-    # Apply outer scale cutoff
-    lo = size//2 - outer_scale//2
-    hi = size//2 + outer_scale//2
-    kernel[:lo] = 0
-    kernel[hi:] = 0
-
-    # Apply causality
-    if causal:
-        kernel[:size//2] = 0
-
-    return kernel
-
-def create_flux_kernel_2d_LS2010(height, width, alpha, outer_scale):
-    """
-    Create 2D flux kernel using Lovejoy & Schertzer 2010 finite-size corrections.
-
-    Parameters
-    ----------
-    height, width : int
-        Size of 2D kernel array
-    alpha : float
-        Lévy stability parameter
-    outer_scale : int
-        Large-scale cutoff
-
-    Returns
-    -------
-    torch.Tensor
-        2D flux kernel ready for convolution
-    """
-    # Create 2D distance array for corrected kernels with dx = 2
-    y_coords = torch.arange(-(height - 1), height, 2, dtype=dtype, device=device)
-    x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
-    Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
-    distance_corrected = torch.sqrt(X**2 + Y**2)
-
-    kernel = create_corrected_kernel(distance_corrected, alpha)
-
-    # Apply outer scale cutoff (convert distance to units of dx=1)
-    kernel[distance_corrected*2 > outer_scale] = 0
-
-    return kernel
-
-def create_H_kernel_2d_LS2010(height, width, H, outer_scale):
-    """
-    Create 2D H-kernel using Lovejoy & Schertzer 2010 finite-size corrections.
-
-    Parameters
-    ----------
-    height, width : int
-        Size of 2D kernel array
-    H : float
-        Hurst exponent
-    outer_scale : int
-        Large-scale cutoff
-
-    Returns
-    -------
-    torch.Tensor
-        2D H-kernel ready for convolution
-    """
-    # Create 2D distance array for corrected kernels with dx = 2
-    y_coords = torch.arange(-(height - 1), height, 2, dtype=dtype, device=device)
-    x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
-    Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
-    distance_corrected = torch.sqrt(X**2 + Y**2)
-
-    kernel = create_corrected_H_kernel(distance_corrected, H, min(height, width), False)
-
-    # Apply outer scale cutoff (convert distance to units of dx=1)
-    kernel[distance_corrected*2 > outer_scale] = 0
-
-    return kernel
-
+# Convolutions
 def periodic_convolve(signal, kernel):
     """
     Performs periodic convolution of two 1D arrays using Fourier methods.
@@ -502,6 +292,8 @@ def periodic_convolve_2d(signal, kernel):
 
     convolved = torch.fft.ifft2(fft_signal * fft_kernel)
     return convolved.real
+
+# FIF
 
 def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, kernel_construction_method='LS2010', periodic=True):
     """
@@ -614,14 +406,22 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
     if outer_scale is None:
         outer_scale = output_size
 
-    # Create kernel 1 using specified method
+    # Create flux kernel (kernel 1)
+    # Calculate exponent and normalization parameters for flux kernel
+    alpha_prime = 1.0 / (1.0 - 1.0/alpha)
+    flux_exponent = -1.0 / alpha_prime
+    flux_norm_ratio_exp = -1.0 / alpha
+    flux_final_power = 1.0 / (alpha - 1.0)
+
     if kernel_construction_method == 'LS2010':
-        kernel1 = create_flux_kernel_LS2010(size, alpha, causal, outer_scale)
+        kernel1 = create_kernel_LS2010(size, flux_exponent, flux_norm_ratio_exp,
+                                      causal=causal, outer_scale=outer_scale,
+                                      final_power=flux_final_power)
     elif kernel_construction_method == 'naive':
-        kernel1 = create_flux_kernel_naive(size, alpha, causal, outer_scale)
+        kernel1 = create_kernel_naive(size, flux_exponent, causal=causal, outer_scale=outer_scale)
     else:
         raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
-    
+
     integrated = periodic_convolve(noise, kernel1)
     del noise, kernel1  # Clean memory
 
@@ -630,7 +430,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
         causality_factor = 2.0
     else:
         causality_factor = 1.0
-    
+
 
     scaled = integrated * ((causality_factor * C1) ** (1/alpha))
     del integrated
@@ -643,12 +443,18 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
             flux = flux[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
         flux = flux / torch.mean(flux)
         return flux.cpu().numpy()
-    
-    # Create kernel 2 using specified method
+
+    # Create H kernel (kernel 2)
+    # Calculate exponent and normalization parameters for H kernel
+    H_exponent = -1.0 + H
+    H_norm_ratio_exp = -H
+
     if kernel_construction_method == 'LS2010':
-        kernel2 = create_H_kernel_LS2010(size, H, causal, outer_scale)
+        kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
+                                      causal=causal, outer_scale=outer_scale,
+                                      final_power=None)
     elif kernel_construction_method == 'naive':
-        kernel2 = create_H_kernel_naive(size, H, causal, outer_scale)
+        kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale)
     else:
         raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
@@ -787,15 +593,23 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
             noise[:output_height, :output_width] = levy_tensor
 
 
-    # Create kernel 1 using specified method
+    # Create flux kernel (kernel 1)
+    # Calculate exponent and normalization parameters for 2D flux kernel
+    alpha_prime = 1.0 / (1.0 - 1.0/alpha)
+    flux_exponent = -2.0 / alpha_prime
+    flux_norm_ratio_exp = -2.0 / alpha
+    flux_final_power = 1.0 / (alpha - 1.0)
+
     if kernel_construction_method == 'LS2010':
-        kernel1 = create_flux_kernel_2d_LS2010(sim_height, sim_width, alpha, outer_scale)
+        kernel1 = create_kernel_LS2010((sim_height, sim_width), flux_exponent, flux_norm_ratio_exp,
+                                      causal=False, outer_scale=outer_scale,
+                                      final_power=flux_final_power)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
-    
+
     # Perform first convolution
     integrated = periodic_convolve_2d(noise, kernel1)
-    
+
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
     del integrated
@@ -807,9 +621,15 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
         flux = flux / torch.mean(flux)
         return flux.cpu().numpy() if periodic else flux[:output_height, :output_width].cpu().numpy()
 
-    # Create kernel 2 using specified method
+    # Create H kernel (kernel 2)
+    # Calculate exponent and normalization parameters for 2D H kernel
+    H_exponent = -2.0 + H
+    H_norm_ratio_exp = -H
+
     if kernel_construction_method == 'LS2010':
-        kernel2 = create_H_kernel_2d_LS2010(sim_height, sim_width, H, outer_scale)
+        kernel2 = create_kernel_LS2010((sim_height, sim_width), H_exponent, H_norm_ratio_exp,
+                                      causal=False, outer_scale=outer_scale,
+                                      final_power=None)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
     

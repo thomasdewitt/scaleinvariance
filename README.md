@@ -79,10 +79,6 @@ python examples/fif_comparison_demo.py
 
 Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
-## Planned Features
-
-- Estimation of multifractal parameters C1 and alpha
-
 ## Requirements
 
 - Python ≥ 3.8
