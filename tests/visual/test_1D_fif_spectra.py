@@ -54,7 +54,7 @@ def main():
             print("Error: causal must be True/False")
             sys.exit(1)
     else:
-        causal = True  # Default causal value
+        causal = False  # Default causal value
     
     print("=" * 50)
     print("FIF SPECTRAL ANALYSIS TEST")
@@ -63,6 +63,7 @@ def main():
     # Parameters
     size = 2**20
     n_sims = 100    # Number of simulations for averaging
+    outer_scale = size/100
     
     print(f"\nParameters:")
     print(f"  Size: {size:,}")
@@ -81,7 +82,7 @@ def main():
         
         # Generate corrected FIF simulation
         fif_field = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                         kernel_construction_method='LS2010')
+                                         kernel_construction_method='LS2010', outer_scale=outer_scale)
         all_fif_data.append(fif_field)
     
     # Concatenate all simulations and analyze with spectral_hurst
@@ -99,7 +100,7 @@ def main():
         
         # Generate uncorrected FIF simulation
         fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                                      kernel_construction_method='naive')
+                                                      kernel_construction_method='naive', outer_scale=outer_scale)
         all_fif_uncorrected_data.append(fif_field_uncorrected)
     
     # Concatenate uncorrected simulations and analyze
@@ -139,7 +140,7 @@ def main():
     # fBm (non-intermittent) theoretical line
     theoretical_beta_fbm = 2 * H + 1
     theoretical_line_fbm = ref_power_fif * (ref_freqs/ref_freq_fif)**(-theoretical_beta_fbm)
-    plt.loglog(ref_freqs, theoretical_line_fbm, 'r--', linewidth=2,
+    plt.loglog(ref_freqs, theoretical_line_fbm, 'r--', linewidth=0.5,
               label=f'Equivalent nonintermittent spectrum (β={theoretical_beta_fbm:.2f})')
     
     plt.xlabel('Frequency')
@@ -148,7 +149,10 @@ def main():
     plt.title(f'FIF Raw Spectral Analysis (H={H}, α={alpha}, C₁={C1}, {causal_str})')
     plt.legend()
     plt.grid(True, alpha=0.3, which='both')
-    
+
+    # Add outer scale vertical line (frequency = 1/outer_scale)
+    plt.axvline(1/outer_scale, color='k', linestyle=':', linewidth=1.5, alpha=0.7, label='Outer scale')
+
     ylims_first = plt.ylim()
     
     # Second subplot: Normalized by multifractal theory
@@ -168,11 +172,11 @@ def main():
     theoretical_line_fbm_full = ref_power_fif * (freqs/ref_freq_fif)**(-theoretical_beta_fbm)
     normalized_fbm_theoretical = (theoretical_line_fbm_full * (freqs**(theoretical_beta_fif))) / (mid_power_corrected * (mid_freq**(theoretical_beta_fif)))
     
-    plt.loglog(freqs, normalized_fif_spectrum, 'b-', linewidth=2, 
+    plt.loglog(freqs, normalized_fif_spectrum, 'b-', linewidth=2,
               label='FIF corrected normalized')
-    plt.loglog(freqs_uncorrected, normalized_fif_uncorrected_spectrum, 'orange', linewidth=2, 
+    plt.loglog(freqs_uncorrected, normalized_fif_uncorrected_spectrum, 'orange', linewidth=2,
               label='FIF uncorrected normalized')
-    plt.loglog(freqs, normalized_fbm_theoretical, 'r--', linewidth=2,
+    plt.loglog(freqs, normalized_fbm_theoretical, 'r--', linewidth=0.5,
               label='fBm normalized by FIF theory')
     
     # Add flat reference line
@@ -186,7 +190,10 @@ def main():
     plt.title('Multifractal-Normalized Spectra (flat = perfect agreement with theory)')
     plt.legend()
     plt.grid(True, alpha=0.3, which='both')
-    
+
+    # Add outer scale vertical line (frequency = 1/outer_scale)
+    plt.axvline(1/outer_scale, color='k', linestyle=':', linewidth=1.5, alpha=0.7, label='Outer scale')
+
     # Set y-limits to span 4 orders of magnitude, centered around 1.0 (normalized level)
     plt.ylim(1e-2, 1e2)
     

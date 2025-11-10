@@ -1,7 +1,7 @@
 import torch
 from torch.fft import fft as torch_fft, ifft as torch_ifft
 import numpy as np
-from .fbm import acausal_fBm_2D, acausal_fBm_1D
+from .fbm import fBm_1D_circulant, fBm_2D_circulant
 
 device = torch.device("cpu")
 dtype = torch.float64
@@ -42,6 +42,44 @@ def extremal_levy(alpha, size=1):
     return sample
 
 # LS 2010 kernels
+
+def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
+    """
+    Apply outer scale cutoff using a Hanning window transition.
+
+    Parameters
+    ----------
+    kernel : torch.Tensor
+        The kernel to apply outer scale to
+    distance : torch.Tensor
+        Distance array (same shape as kernel)
+    outer_scale : float
+        Center of the transition region
+    width_factor : float, optional
+        Controls transition width. Transition width = outer_scale * width_factor.
+        Default is 2.0.
+
+    Returns
+    -------
+    torch.Tensor
+        Kernel with outer scale applied
+    """
+    if not isinstance(distance, torch.Tensor):
+        distance = torch.as_tensor(distance, device=device, dtype=dtype)
+
+    # Transition region centered at outer_scale with width = outer_scale * width_factor
+    transition_width = outer_scale * width_factor
+    lower_edge = outer_scale - transition_width / 2.0
+    upper_edge = outer_scale + transition_width / 2.0
+
+    # Compute normalized distance: 0 at lower_edge, 1 at upper_edge
+    # Clamp to [0, 1] so values below lower_edge → 0, above upper_edge → 1
+    normalized_dist = torch.clamp((distance - lower_edge) / transition_width, 0.0, 1.0)
+
+    # Hanning window: 1 when normalized_dist=0, 0 when normalized_dist=1
+    window = 0.5 * (1.0 + torch.cos(torch.pi * normalized_dist))
+
+    return kernel * window
 
 def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power=None):
     """
@@ -121,7 +159,8 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
 
     return corrected_kernel
 
-def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None, final_power=None):
+def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None,
+                         outer_scale_width_factor=2.0, final_power=None):
     """
     Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
 
@@ -143,6 +182,9 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         Whether to make kernel causal (1D only). Default False.
     outer_scale : int, optional
         Large-scale cutoff. If None, no outer scale cutoff is applied.
+    outer_scale_width_factor : float, optional
+        Controls transition width for outer scale. Transition width = outer_scale * width_factor.
+        Default is 2.0.
     final_power : float, optional
         Final power transformation (e.g., 1/(α-1) for flux kernel). Default None.
 
@@ -158,12 +200,9 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         distance = torch.abs(position_range)
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
-        # Apply outer scale cutoff
+        # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
         if outer_scale is not None:
-            lo = size//2 - outer_scale//2
-            hi = size//2 + outer_scale//2
-            kernel[:lo] = 0
-            kernel[hi:] = 0
+            kernel = _apply_outer_scale(kernel, distance / 2, outer_scale, outer_scale_width_factor)
 
         # Apply causality
         if causal:
@@ -178,15 +217,15 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         distance = torch.sqrt(X**2 + Y**2)
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
-        # Apply outer scale cutoff (convert distance to units of dx=1)
+        # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
         if outer_scale is not None:
-            kernel[distance*2 > outer_scale] = 0
+            kernel = _apply_outer_scale(kernel, distance / 2, outer_scale, outer_scale_width_factor)
 
     return kernel
 
 # Naive kernel construction methods
 
-def create_kernel_naive(size, exponent, causal=False, outer_scale=None):
+def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0):
     """
     Create kernel using simple power-law (no finite-size corrections).
 
@@ -204,23 +243,23 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None):
         Whether to make kernel causal. Default False.
     outer_scale : int, optional
         Large-scale cutoff. If None, no outer scale cutoff is applied.
+    outer_scale_width_factor : float, optional
+        Controls transition width for outer scale. Transition width = outer_scale * width_factor.
+        Default is 2.0.
 
     Returns
     -------
     torch.Tensor
         Power-law kernel ready for convolution
     """
-    # Create distance array (dx=1 spacing)
-    distance = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device))
-    distance[distance==0] = 1  # Avoid singularity at origin
+    # Create distance array (dx=1 spacing; avoid singularity by adding 1/2)
+    distance = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device)+0.5)
+
     kernel = distance ** exponent
 
-    # Apply outer scale cutoff
+    # Apply outer scale cutoff with Hanning window
     if outer_scale is not None:
-        lo = size//2 - outer_scale//2
-        hi = size//2 + outer_scale//2
-        kernel[:lo] = 0
-        kernel[hi:] = 0
+        kernel = _apply_outer_scale(kernel, distance, outer_scale, outer_scale_width_factor)
 
     # Apply causality
     if causal:
@@ -295,7 +334,8 @@ def periodic_convolve_2d(signal, kernel):
 
 # FIF
 
-def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, kernel_construction_method='LS2010', periodic=True):
+def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
+           outer_scale_width_factor=2.0, kernel_construction_method='LS2010', periodic=True):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -330,6 +370,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
         False gives symmetric (non-causal) kernels.
     outer_scale : int, optional
         Large-scale cutoff. Defaults to size.
+    outer_scale_width_factor : float, optional
+        Controls transition width for outer scale. Transition width = outer_scale * width_factor.
+        Default is 2.0.
     kernel_construction_method : str, optional
         Method for constructing convolution kernels. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
@@ -370,9 +413,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
         size *= 2   # duplicate to eliminate periodicity
 
     if C1 == 0 and not causal:
-        if levy_noise is not None: 
+        if levy_noise is not None:
             raise ValueError('noise argument not supported for C1=0')
-        result = acausal_fBm_1D(size, H)
+        result = fBm_1D_circulant(size, H)
         return result[:output_size] if periodic else result
     
     if not isinstance(C1, (int, float)) or C1 <= 0:
@@ -416,9 +459,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
     if kernel_construction_method == 'LS2010':
         kernel1 = create_kernel_LS2010(size, flux_exponent, flux_norm_ratio_exp,
                                       causal=causal, outer_scale=outer_scale,
+                                      outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
     elif kernel_construction_method == 'naive':
-        kernel1 = create_kernel_naive(size, flux_exponent, causal=causal, outer_scale=outer_scale)
+        kernel1 = create_kernel_naive(size, flux_exponent, causal=causal, outer_scale=outer_scale,
+                                     outer_scale_width_factor=outer_scale_width_factor)
     else:
         raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
@@ -452,9 +497,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
     if kernel_construction_method == 'LS2010':
         kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
                                       causal=causal, outer_scale=outer_scale,
+                                      outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None)
     elif kernel_construction_method == 'naive':
-        kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale)
+        kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
+                                     outer_scale_width_factor=outer_scale_width_factor)
     else:
         raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
@@ -476,7 +523,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None, k
 
     return observable.cpu().numpy()
 
-def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_construction_method='LS2010', periodic=False):
+def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
+           kernel_construction_method='LS2010', periodic=False):
     """
     Generate a 2D Fractionally Integrated Flux (FIF) multifractal simulation.
     
@@ -507,6 +555,9 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
         Pre-generated 2D Lévy noise for reproducibility. Must have same shape as simulation.
     outer_scale : int, optional
         Large-scale cutoff. Defaults to max(height, width).
+    outer_scale_width_factor : float, optional
+        Controls transition width for outer scale. Transition width = outer_scale * width_factor.
+        Default is 2.0.
     kernel_construction_method : str, optional
         Method for constructing convolution kernels. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
@@ -556,7 +607,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     sim_width = output_width if periodic else output_width * 2
 
     if C1 == 0:
-        fbm = acausal_fBm_2D((sim_height, sim_width), H)
+        fbm = fBm_2D_circulant((sim_height, sim_width), H)
         return fbm if periodic else fbm[:output_height, :output_width]
 
     if outer_scale is None:
@@ -603,6 +654,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     if kernel_construction_method == 'LS2010':
         kernel1 = create_kernel_LS2010((sim_height, sim_width), flux_exponent, flux_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
+                                      outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
@@ -629,6 +681,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, kernel_constru
     if kernel_construction_method == 'LS2010':
         kernel2 = create_kernel_LS2010((sim_height, sim_width), H_exponent, H_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
+                                      outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None)
     else:
         raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")

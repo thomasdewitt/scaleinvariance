@@ -5,4 +5,4 @@ Contains methods for generating synthetic multifractal time series and fields.
 """
 
 from .FIF import FIF_1D, FIF_2D
-from .fbm import acausal_fBm_1D, acausal_fBm_2D
+from .fbm import fBm_1D, fBm_1D_circulant, fBm_2D_circulant

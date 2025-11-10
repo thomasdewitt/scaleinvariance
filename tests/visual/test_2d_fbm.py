@@ -3,7 +3,7 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from scaleinvariance import acausal_fBm_2D, haar_fluctuation_hurst, structure_function_hurst, spectral_hurst
+from scaleinvariance import fBm_2D_circulant, haar_fluctuation_hurst, structure_function_hurst, spectral_hurst
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     size = 2048
 
     print(f"Generating 2D fBm with H={H}, size={int(size/2)}x{size}")
-    fbm_2d_rect = acausal_fBm_2D((int(size/2), size), H)
+    fbm_2d_rect = fBm_2D_circulant((int(size/2), size), H)
     print(f"Shape: {fbm_2d_rect.shape}")
     print(f"Mean: {np.mean(fbm_2d_rect):.6f}")
     print(f"Std: {np.std(fbm_2d_rect):.6f}")

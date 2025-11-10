@@ -26,4 +26,4 @@ from . import analysis, simulation
 
 # Easy access to main functions
 from .analysis import structure_function_hurst, haar_fluctuation_hurst, spectral_hurst, haar_fluctuation_analysis, structure_function_analysis, spectral_analysis, two_point_intermittency_exponent, K
-from .simulation import FIF_1D, FIF_2D, acausal_fBm_1D, acausal_fBm_2D
+from .simulation import FIF_1D, FIF_2D, fBm_1D, fBm_1D_circulant, fBm_2D_circulant
