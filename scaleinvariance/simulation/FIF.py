@@ -153,12 +153,15 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     return corrected_kernel
 
 def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None,
-                         outer_scale_width_factor=2.0, final_power=None):
+                         outer_scale_width_factor=2.0, final_power=None, scale_metric=None):
     """
     Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
 
     Unified function for creating both flux and H kernels with LS2010 corrections.
     Handles 1D and N-D cases automatically.
+
+    **IMPORTANT**: This method uses dx=2 grid spacing for kernel construction.
+    Distance coordinates are defined as arange(-(size-1), size, 2) for each dimension.
 
     Parameters
     ----------
@@ -180,6 +183,11 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         Default is 2.0.
     final_power : float, optional
         Final power transformation (e.g., 1/(α-1) for flux kernel). Default None.
+    scale_metric : ndarray, optional
+        Custom N-D array defining the scale metric (generalized distance) for GSI norms.
+        If None (default), standard Euclidean distance is computed with dx=2 spacing.
+        **Shape requirement**: Must match the kernel size (same shape as size parameter).
+        **Note**: Only applicable for N-D case; ignored for 1D.
 
     Returns
     -------
@@ -203,14 +211,18 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
 
     else:
         # N-D case
-        # Create coordinate arrays for each dimension
-        coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
+        if scale_metric is None:
+            # Create coordinate arrays for each dimension (dx=2 spacing)
+            coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
 
-        # Create N-D meshgrid
-        coord_grids = B.meshgrid(*coord_arrays, indexing='ij')
+            # Create N-D meshgrid
+            coord_grids = B.meshgrid(*coord_arrays, indexing='ij')
 
-        # Calculate Euclidean distance: sqrt(x1^2 + x2^2 + ... + xn^2)
-        distance = B.sqrt(sum(grid**2 for grid in coord_grids))
+            # Calculate Euclidean distance: sqrt(x1^2 + x2^2 + ... + xn^2)
+            distance = B.sqrt(sum(grid**2 for grid in coord_grids))
+        else:
+            # Use provided scale metric
+            distance = scale_metric
 
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
@@ -518,7 +530,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     return observable
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
-           kernel_construction_method='LS2010', periodic=False):
+           kernel_construction_method='LS2010', periodic=False, scale_metric=None, scale_metric_dim=None):
     """
     Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -555,10 +567,27 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     kernel_construction_method : str, optional
         Method for constructing convolution kernels. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-    periodic : bool, optional
-        If False (default), doubles domain size internally and returns one hyper-octant to
-        suppress periodic artifacts. If True, keeps the simulation strictly periodic
-        with the provided size.
+          **IMPORTANT**: LS2010 kernels use dx=2 grid spacing
+    periodic : bool or tuple of bool, optional
+        Controls periodicity behavior for each axis.
+        - If bool: applies same periodicity to all axes (default False)
+        - If tuple: specifies per-axis periodicity, must have length matching size tuple
+        When an axis is non-periodic (False), the domain is doubled along that axis
+        internally and one hyper-octant is returned to suppress periodic artifacts.
+    scale_metric : ndarray, optional
+        Custom N-D array defining the scale metric (generalized distance) for GSI norms.
+        If None (default), standard Euclidean distance is computed.
+        **Shape requirement**: Must match simulation domain shape after accounting for
+        periodicity (doubled along non-periodic axes). For example, if size=(256, 256)
+        and periodic=False, scale_metric.shape must be (512, 512).
+        **Note**: For LS2010 method, the metric should use dx=2 spacing to match
+        the kernel construction grid.
+    scale_metric_dim : float, optional
+        Dimension for scaling exponents in kernel calculations. This may differ from
+        the spatial dimension when using GSI norms with non-integer dimensions.
+        If None (default), uses the spatial dimension (inferred from size tuple length).
+        **Use case**: In Generalized Scale Invariance (GSI), the scaling dimension
+        may be non-integer and different from the embedding space dimension.
 
     Returns
     -------
@@ -581,6 +610,23 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     >>>
     >>> # 3D multifractal
     >>> fif = FIF_ND((128, 128, 128), alpha=1.5, C1=0.05, H=0.2)
+    >>>
+    >>> # 2D with per-axis periodicity (periodic in x, non-periodic in y)
+    >>> fif = FIF_ND((256, 256), alpha=1.6, C1=0.08, H=0.4, periodic=(True, False))
+    >>>
+    >>> # Using custom GSI norm (example with anisotropic scaling)
+    >>> import numpy as np
+    >>> size = (256, 256)
+    >>> sim_size = (512, 512)  # doubled for non-periodic
+    >>> # Create coordinate arrays with dx=2 spacing (to match LS2010)
+    >>> x = np.arange(-(sim_size[0]-1), sim_size[0], 2)
+    >>> y = np.arange(-(sim_size[1]-1), sim_size[1], 2)
+    >>> X, Y = np.meshgrid(x, y, indexing='ij')
+    >>> # Define anisotropic GSI metric with different scaling in x and y
+    >>> scale_metric = (X**2 + (Y/2)**2)**0.5  # y-direction scales faster
+    >>> # Use non-integer dimension for GSI
+    >>> fif = FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
+    ...              scale_metric=scale_metric, scale_metric_dim=2.3)
 
     Notes
     -----
@@ -596,13 +642,43 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     output_size = size
     ndim = len(size)
 
+    # Handle periodic parameter (bool or tuple of bool)
+    if isinstance(periodic, bool):
+        periodic_tuple = tuple(periodic for _ in range(ndim))
+    elif isinstance(periodic, tuple):
+        if len(periodic) != ndim:
+            raise ValueError(f"periodic tuple length ({len(periodic)}) must match size tuple length ({ndim})")
+        if not all(isinstance(p, bool) for p in periodic):
+            raise ValueError("All elements in periodic tuple must be boolean")
+        periodic_tuple = periodic
+    else:
+        raise ValueError("periodic must be either a bool or a tuple of bool")
+
     # Determine simulation domain size (double each dimension if not periodic)
-    sim_size = tuple(s if periodic else s * 2 for s in output_size)
+    sim_size = tuple(s if periodic_tuple[i] else s * 2 for i, s in enumerate(output_size))
+
+    # Validate scale_metric shape if provided
+    if scale_metric is not None:
+        scale_metric = B.asarray(scale_metric)
+        if scale_metric.shape != sim_size:
+            raise ValueError(
+                f"scale_metric shape {scale_metric.shape} must match simulation domain shape {sim_size}. "
+                f"For periodic={periodic}, with size={output_size}, the simulation domain is "
+                f"{sim_size} (doubled along non-periodic axes)."
+            )
+
+    # Set dimension for scaling exponents (defaults to spatial dimension)
+    if scale_metric_dim is None:
+        scale_metric_dim = float(ndim)
+    else:
+        scale_metric_dim = float(scale_metric_dim)
 
     # C1==0 shortcut: use fBm for 2D only
     if C1 == 0 and ndim == 2:
         fbm = fBm_2D_circulant(sim_size, H)
-        return fbm if periodic else fbm[tuple(slice(s) for s in output_size)]
+        # Extract output based on per-axis periodicity
+        output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
+        return fbm[output_slices]
 
     if outer_scale is None:
         outer_scale = max(sim_size)
@@ -643,15 +719,15 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Create flux kernel (kernel 1)
     # Calculate exponent and normalization parameters for N-D flux kernel
     alpha_prime = 1.0 / (1.0 - 1.0/alpha)
-    flux_exponent = -float(ndim) / alpha_prime
-    flux_norm_ratio_exp = -float(ndim) / alpha
+    flux_exponent = -scale_metric_dim / alpha_prime
+    flux_norm_ratio_exp = -scale_metric_dim / alpha
     flux_final_power = 1.0 / (alpha - 1.0)
 
     if kernel_construction_method == 'LS2010':
         kernel1 = create_kernel_LS2010(sim_size, flux_exponent, flux_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=flux_final_power)
+                                      final_power=flux_final_power, scale_metric=scale_metric)
     else:
         raise ValueError(f"Unknown kernel_construction_method for N-D: {kernel_construction_method}")
 
@@ -665,20 +741,21 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     del scaled
 
     if H == 0:
-        # Normalize and return first hyper-octant only to eliminate periodicity
+        # Normalize and extract output based on per-axis periodicity
         flux = flux / B.mean(flux)
-        return flux if periodic else flux[tuple(slice(s) for s in output_size)]
+        output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
+        return flux[output_slices]
 
     # Create H kernel (kernel 2)
     # Calculate exponent and normalization parameters for N-D H kernel
-    H_exponent = -float(ndim) + H
+    H_exponent = -scale_metric_dim + H
     H_norm_ratio_exp = -H
 
     if kernel_construction_method == 'LS2010':
         kernel2 = create_kernel_LS2010(sim_size, H_exponent, H_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=None)
+                                      final_power=None, scale_metric=scale_metric)
     else:
         raise ValueError(f"Unknown kernel_construction_method for N-D: {kernel_construction_method}")
 
@@ -688,5 +765,6 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Normalize by mean
     observable = observable / B.mean(observable)
 
-    # Return full periodic field or first hyper-octant to eliminate periodicity
-    return observable if periodic else observable[tuple(slice(s) for s in output_size)]
+    # Extract output based on per-axis periodicity
+    output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
+    return observable[output_slices]
