@@ -1,17 +1,13 @@
-import torch
-from torch.fft import fft as torch_fft, ifft as torch_ifft
 import numpy as np
+from .. import backend as B
 from .fbm import fBm_1D_circulant, fBm_2D_circulant
-
-device = torch.device("cpu")
-dtype = torch.float64
 
 def extremal_levy(alpha, size=1):
     """
-    Generate random samples from an extremal Lévy distribution using a modified 
+    Generate random samples from an extremal Lévy distribution using a modified
     Chambers–Mallows–Stuck method.
 
-    Translated from Mathematica code provided by Lovejoy: 
+    Translated from Mathematica code provided by Lovejoy:
     https://www.physics.mcgill.ca/~gang/multifrac/multifractals/software.htm
 
     Parameters:
@@ -21,27 +17,25 @@ def extremal_levy(alpha, size=1):
     Returns:
         ndarray: Array of generated extremal Lévy random variables
     """
-    phi = (torch.rand(size, dtype=dtype, device=device) - 0.5) * torch.pi
-    alpha_t = torch.tensor(alpha, dtype=dtype, device=device)
-    phi0 = -(torch.pi/2) * (1 - torch.abs(1 - alpha_t)) / alpha_t
-    R = torch.distributions.Exponential(1).sample((size,)).to(device)
+    phi = (B.rand(size) - 0.5) * B.pi
+    alpha_t = alpha
+    phi0 = -(B.pi/2) * (1 - B.abs(1 - alpha_t)) / alpha_t
+    R = B.exponential(scale=1.0, size=size)
     eps = 1e-12
-    cos_phi = torch.cos(phi)
-    cos_phi = torch.where(torch.abs(cos_phi) < eps, torch.full_like(cos_phi, eps), cos_phi)
-    abs_alpha1 = torch.abs(alpha_t - 1)
-    abs_alpha1 = torch.where(abs_alpha1 < eps, torch.full_like(abs_alpha1, eps), abs_alpha1)
-    denom = torch.cos(phi - alpha_t * (phi - phi0))
-    denom = torch.where(torch.abs(denom) < eps, torch.full_like(denom, eps), denom)
-    R = torch.where(R < eps, torch.full_like(R, eps), R)
+    cos_phi = B.cos(phi)
+    cos_phi = B.where(B.abs(cos_phi) < eps, np.full_like(cos_phi, eps), cos_phi)
+    abs_alpha1 = B.abs(alpha_t - 1)
+    abs_alpha1 = B.where(abs_alpha1 < eps, np.full_like(abs_alpha1, eps), abs_alpha1)
+    denom = B.cos(phi - alpha_t * (phi - phi0))
+    denom = B.where(B.abs(denom) < eps, np.full_like(denom, eps), denom)
+    R = B.where(R < eps, np.full_like(R, eps), R)
     sample = (
-        torch.sign(alpha_t - 1) *
-        torch.sin(alpha_t * (phi - phi0)) *
+        B.sign(alpha_t - 1) *
+        B.sin(alpha_t * (phi - phi0)) *
         (cos_phi * abs_alpha1) ** (-1/alpha_t) *
         (denom / R) ** ((1 - alpha_t) / alpha_t)
     )
     return sample
-
-# LS 2010 kernels
 
 def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
     """
@@ -49,9 +43,9 @@ def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
 
     Parameters
     ----------
-    kernel : torch.Tensor
+    kernel : ndarray
         The kernel to apply outer scale to
-    distance : torch.Tensor
+    distance : ndarray
         Distance array (same shape as kernel)
     outer_scale : float
         Center of the transition region
@@ -61,11 +55,10 @@ def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
 
     Returns
     -------
-    torch.Tensor
+    ndarray
         Kernel with outer scale applied
     """
-    if not isinstance(distance, torch.Tensor):
-        distance = torch.as_tensor(distance, device=device, dtype=dtype)
+    distance = B.asarray(distance)
 
     # Transition region centered at outer_scale with width = outer_scale * width_factor
     transition_width = outer_scale * width_factor
@@ -74,12 +67,14 @@ def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
 
     # Compute normalized distance: 0 at lower_edge, 1 at upper_edge
     # Clamp to [0, 1] so values below lower_edge → 0, above upper_edge → 1
-    normalized_dist = torch.clamp((distance - lower_edge) / transition_width, 0.0, 1.0)
+    normalized_dist = B.clip((distance - lower_edge) / transition_width, 0.0, 1.0)
 
     # Hanning window: 1 when normalized_dist=0, 0 when normalized_dist=1
-    window = 0.5 * (1.0 + torch.cos(torch.pi * normalized_dist))
+    window = 0.5 * (1.0 + B.cos(B.pi * normalized_dist))
 
     return kernel * window
+
+# LS 2010 kernels
 
 def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power=None):
     """
@@ -96,7 +91,7 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
 
     Parameters
     ----------
-    distance : torch.Tensor
+    distance : ndarray
         Distance array (1D or 2D), expects dx=2 spacing
     exponent : float
         Power-law exponent for base kernel (e.g., -1/α' for flux, -1+H for H kernel)
@@ -108,15 +103,14 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
 
     Returns
     -------
-    torch.Tensor
+    ndarray
         Corrected kernel
     """
-    if not isinstance(distance, torch.Tensor):
-        distance = torch.as_tensor(distance, device=device, dtype=dtype)
+    distance = B.asarray(distance)
 
     # Determine domain size for cutoff calculation
     if distance.ndim == 1:
-        domain_size = distance.numel()
+        domain_size = distance.size
     elif distance.ndim == 2:
         domain_size = min(distance.shape)
     else:
@@ -127,27 +121,27 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     cutoff_length2 = cutoff_length / ratio
 
     # Calculate exponential cutoffs
-    exponential_cutoff = torch.exp(torch.clamp(-(distance/cutoff_length)**4, max=0, min=-200))
-    exponential_cutoff2 = torch.exp(torch.clamp(-(distance/cutoff_length2)**4, max=0, min=-200))
+    exponential_cutoff = B.exp(B.clip(-(distance/cutoff_length)**4, -200, 0))
+    exponential_cutoff2 = B.exp(B.clip(-(distance/cutoff_length2)**4, -200, 0))
 
     # Base singularity kernel
     base_kernel = distance**exponent
 
     # Calculate normalization constants
     smoothed_kernel1 = base_kernel * exponential_cutoff
-    norm_constant1 = torch.sum(smoothed_kernel1)
+    norm_constant1 = B.sum(smoothed_kernel1)
 
     smoothed_kernel2 = base_kernel * exponential_cutoff2
-    norm_constant2 = torch.sum(smoothed_kernel2)
+    norm_constant2 = B.sum(smoothed_kernel2)
 
     # Normalization factor
     ratio_factor = ratio**norm_ratio_exponent
     normalization_factor = (ratio_factor * norm_constant1 - norm_constant2) / (ratio_factor - 1)
 
     # Final smoothing filter
-    final_filter = torch.exp(torch.clamp(-distance/3.0, max=0, min=-200))
+    final_filter = B.exp(B.clip(-distance/3.0, -200, 0))
     smoothed_kernel = base_kernel * final_filter
-    filter_integral = torch.sum(smoothed_kernel)
+    filter_integral = B.sum(smoothed_kernel)
 
     # Apply correction
     correction_factor = -normalization_factor / filter_integral
@@ -196,8 +190,8 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     # Handle 1D vs 2D
     if isinstance(size, int):
         # 1D case
-        position_range = torch.arange(-(size - 1), size, 2, dtype=dtype, device=device)
-        distance = torch.abs(position_range)
+        position_range = B.arange(-(size - 1), size, 2)
+        distance = B.abs(position_range)
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
         # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
@@ -211,10 +205,10 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     else:
         # 2D case
         height, width = size
-        y_coords = torch.arange(-(height - 1), height, 2, dtype=dtype, device=device)
-        x_coords = torch.arange(-(width - 1), width, 2, dtype=dtype, device=device)
-        Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
-        distance = torch.sqrt(X**2 + Y**2)
+        y_coords = B.arange(-(height - 1), height, 2)
+        x_coords = B.arange(-(width - 1), width, 2)
+        Y, X = B.meshgrid(y_coords, x_coords, indexing='ij')
+        distance = B.sqrt(X**2 + Y**2)
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
         # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
@@ -253,7 +247,7 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
         Power-law kernel ready for convolution
     """
     # Create distance array (dx=1 spacing; avoid singularity by adding 1/2)
-    distance = torch.abs(torch.arange(-size//2, size//2, dtype=dtype, device=device)+0.5)
+    distance = B.abs(B.arange(-size//2, size//2)+0.5)
 
     kernel = distance ** exponent
 
@@ -283,22 +277,20 @@ def periodic_convolve(signal, kernel):
     Raises:
         ValueError: If signal and kernel lengths do not match.
     """
-    if not isinstance(signal, torch.Tensor):
-        signal = torch.as_tensor(signal, device=device, dtype=dtype)
-    if not isinstance(kernel, torch.Tensor):
-        kernel = torch.as_tensor(kernel, device=device, dtype=dtype)
+    signal = B.asarray(signal)
+    kernel = B.asarray(kernel)
 
-    if signal.numel() != kernel.numel():
+    if signal.size != kernel.size:
         raise ValueError("Signal and kernel must have the same length for periodic convolution.")
 
     # Shift kernel so zero-lag is at index 0 (required for FFT convolution)
-    kernel = torch.fft.ifftshift(kernel)
+    kernel = B.ifftshift(kernel)
 
-    fft_signal = torch_fft(signal)
-    fft_kernel = torch_fft(kernel)
+    fft_signal = B.fft(signal)
+    fft_kernel = B.fft(kernel)
 
-    convolved = torch_ifft(fft_signal * fft_kernel)
-    return convolved.real
+    convolved = B.real(B.ifft(fft_signal * fft_kernel))
+    return convolved
 
 def periodic_convolve_2d(signal, kernel):
     """
@@ -306,31 +298,29 @@ def periodic_convolve_2d(signal, kernel):
     Both arrays must have the same shape.
 
     Parameters:
-        signal (torch.Tensor): Input signal array (2D).
-        kernel (torch.Tensor): Convolution kernel array (2D).
+        signal (ndarray): Input signal array (2D).
+        kernel (ndarray): Convolution kernel array (2D).
 
     Returns:
-        torch.Tensor: The result of the periodic convolution.
+        ndarray: The result of the periodic convolution.
 
     Raises:
         ValueError: If signal and kernel shapes do not match.
     """
-    if not isinstance(signal, torch.Tensor):
-        signal = torch.as_tensor(signal, device=device, dtype=dtype)
-    if not isinstance(kernel, torch.Tensor):
-        kernel = torch.as_tensor(kernel, device=device, dtype=dtype)
+    signal = B.asarray(signal)
+    kernel = B.asarray(kernel)
 
     if signal.shape != kernel.shape:
         raise ValueError("Signal and kernel must have the same shape for periodic convolution.")
 
     # Shift kernel so zero-lag is at index (0,0) (required for FFT convolution)
-    kernel = torch.fft.ifftshift(kernel)
+    kernel = B.ifftshift(kernel)
 
-    fft_signal = torch.fft.fft2(signal)
-    fft_kernel = torch.fft.fft2(kernel)
+    fft_signal = B.fft2(signal)
+    fft_kernel = B.fft2(kernel)
 
-    convolved = torch.fft.ifft2(fft_signal * fft_kernel)
-    return convolved.real
+    convolved = B.real(B.ifft2(fft_signal * fft_kernel))
+    return convolved
 
 # FIF
 
@@ -417,10 +407,10 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
             raise ValueError('noise argument not supported for C1=0')
         result = fBm_1D_circulant(size, H)
         return result[:output_size] if periodic else result
-    
+
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
-    
+
     H_int = 0
     if H < 0:
         H_int = -1
@@ -428,24 +418,25 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     if not isinstance(H, (int, float)) or H < 0 or H > 1:
         raise ValueError("H must be a number between -1 and 1.")
-    
+
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
-    
-    if alpha == 1: 
+
+    if alpha == 1:
         raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
     if levy_noise is None:
         noise = extremal_levy(alpha, size=size)
     else:
-        if levy_noise.size()[0] != output_size:
+        levy_noise_arr = B.asarray(levy_noise)
+        if levy_noise_arr.size != output_size:
             raise ValueError("Provided levy_noise must match the specified size.")
-        # if aperiodic is requested, need to pad noise with more noise 
+        # if aperiodic is requested, need to pad noise with more noise
         if not periodic:
-            noise = torch.cat([torch.as_tensor(levy_noise, device=device, dtype=dtype),extremal_levy(alpha, size=output_size)])
+            noise = B.concatenate([levy_noise_arr, extremal_levy(alpha, size=output_size)])
         else:
-            noise = torch.as_tensor(levy_noise, device=device, dtype=dtype)
+            noise = levy_noise_arr
     if outer_scale is None:
         outer_scale = output_size
 
@@ -479,15 +470,15 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     scaled = integrated * ((causality_factor * C1) ** (1/alpha))
     del integrated
-    flux = torch.exp(scaled)
+    flux = B.exp(scaled)
     del scaled
 
     if H == 0:
         # Normalize - slice first (if periodic), then normalize by mean
         if not periodic:
             flux = flux[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
-        flux = flux / torch.mean(flux)
-        return flux.cpu().numpy()
+        flux = flux / B.mean(flux)
+        return flux
 
     # Create H kernel (kernel 2)
     # Calculate exponent and normalization parameters for H kernel
@@ -512,16 +503,16 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     if H_int == -1:
         # Apply differencing for H<0
-        observable = torch.diff(observable)
+        observable = B.diff(observable)
         # Duplicate last value to maintain original size
-        observable = torch.cat([observable, observable[-1:]])
+        observable = B.concatenate([observable, observable[-1:]])
         # Normalize to zero mean (increments should have zero mean)
-        observable = observable - torch.mean(observable)
+        observable = observable - B.mean(observable)
     else:
         # Normalize to unit mean (levels should have unit mean)
-        observable = observable / torch.mean(observable)
+        observable = observable / B.mean(observable)
 
-    return observable.cpu().numpy()
+    return observable
 
 def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method='LS2010', periodic=False):
@@ -632,7 +623,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     if levy_noise is None:
         noise = extremal_levy(alpha, size=sim_height * sim_width).reshape(sim_height, sim_width)
     else:
-        levy_tensor = torch.as_tensor(levy_noise, device=device, dtype=dtype)
+        levy_tensor = B.asarray(levy_noise)
         if periodic:
             if levy_tensor.shape != (sim_height, sim_width):
                 raise ValueError("Provided levy_noise must match the specified size.")
@@ -665,13 +656,13 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
     del integrated
-    flux = torch.exp(scaled)
+    flux = B.exp(scaled)
     del scaled
 
     if H == 0:
         # Normalize and return first quadrant only to eliminate periodicity
-        flux = flux / torch.mean(flux)
-        return flux.cpu().numpy() if periodic else flux[:output_height, :output_width].cpu().numpy()
+        flux = flux / B.mean(flux)
+        return flux if periodic else flux[:output_height, :output_width]
 
     # Create H kernel (kernel 2)
     # Calculate exponent and normalization parameters for 2D H kernel
@@ -690,7 +681,7 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     observable = periodic_convolve_2d(flux, kernel2)
 
     # Normalize by mean
-    observable = observable / torch.mean(observable)
+    observable = observable / B.mean(observable)
 
     # Return full periodic field or first quadrant to eliminate periodicity
-    return observable.cpu().numpy() if periodic else observable[:output_height, :output_width].cpu().numpy()
+    return observable if periodic else observable[:output_height, :output_width]

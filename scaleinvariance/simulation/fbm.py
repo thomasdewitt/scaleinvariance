@@ -1,7 +1,5 @@
-import torch
 import numpy as np
-
-from .. import device
+from .. import backend as B
 
 
 def fBm_1D_circulant(size, H):
@@ -26,34 +24,34 @@ def fBm_1D_circulant(size, H):
     """
     if size & (size - 1) != 0:
         raise ValueError("Size must be power of 2")
-    
+
     # Frequency array with proper normalization for physical wavelengths
-    k = torch.fft.fftfreq(size, d=1.0, device=device) * 2 * torch.pi
+    k = B.fftfreq(size, d=1.0) * 2 * B.pi
     k[0] = 1  # Avoid division by zero at k=0
-    
+
     # Power spectrum: |k|^(-β) where β = 2H + 1
     beta = 2 * H + 1
-    power_spectrum = torch.abs(k) ** (-beta)
+    power_spectrum = B.abs(k) ** (-beta)
 
     # Random complex phases
-    phases = torch.rand(size, device=device) * 2 * torch.pi
-    complex_amplitudes = torch.sqrt(power_spectrum) * torch.exp(1j * phases)
+    phases = B.rand(size) * 2 * B.pi
+    complex_amplitudes = B.sqrt(power_spectrum) * B.exp(1j * phases)
 
     # Ensure Hermitian symmetry for real output
     if size % 2 == 0:
-        complex_amplitudes[size//2] = complex_amplitudes[size//2].real + 0j
-    complex_amplitudes[size//2+1:] = torch.conj(torch.flip(complex_amplitudes[1:size//2], [0]))
+        complex_amplitudes[size//2] = np.real(complex_amplitudes[size//2]) + 0j
+    complex_amplitudes[size//2+1:] = B.conj(B.flip(complex_amplitudes[1:size//2], axis=0))
 
     # Inverse FFT to get real space
-    fBm = torch.fft.ifft(complex_amplitudes).real
+    fBm = B.real(B.ifft(complex_amplitudes))
 
     # Normalize to unit std
-    fBm = fBm - torch.mean(fBm)  # Zero mean first
-    fBm_std = torch.std(fBm)
+    fBm = fBm - B.mean(fBm)  # Zero mean first
+    fBm_std = B.std(fBm)
     if fBm_std > 1e-10:
         fBm = fBm / fBm_std
 
-    return fBm.cpu().numpy()
+    return fBm
 
 
 def fBm_2D_circulant(size, H):
@@ -80,55 +78,55 @@ def fBm_2D_circulant(size, H):
         nx, ny = size, size
     else:
         nx, ny = size
-    
+
     # Convert to int if needed
     nx, ny = int(nx), int(ny)
-        
+
     if (nx & (nx - 1)) != 0 or (ny & (ny - 1)) != 0:
         raise ValueError("All dimensions must be powers of 2")
-    
+
     # 2D frequency arrays with proper normalization for physical wavelengths
     # Assume unit grid spacing, so frequencies are in cycles per unit length
-    kx = torch.fft.fftfreq(nx, d=1.0, device=device) * 2 * torch.pi
-    ky = torch.fft.fftfreq(ny, d=1.0, device=device) * 2 * torch.pi
-    KX, KY = torch.meshgrid(kx, ky, indexing='ij')
-    
+    kx = B.fftfreq(nx, d=1.0) * 2 * B.pi
+    ky = B.fftfreq(ny, d=1.0) * 2 * B.pi
+    KX, KY = B.meshgrid(kx, ky, indexing='ij')
+
     # Radial frequency magnitude in physical units
-    K = torch.sqrt(KX**2 + KY**2)
+    K = B.sqrt(KX**2 + KY**2)
     K[0, 0] = 1  # Avoid division by zero at k=0
-    
+
     # Power spectrum: |k|^(-β) where β = 2H + 2 for 2D
     beta = 2 * H + 2
     power_spectrum = K ** (-beta)
 
     # Use rfft2 approach - only need half the frequency domain
     # Create random phases for the non-redundant half
-    phases = torch.rand(nx, ny//2 + 1, device=device) * 2 * torch.pi
+    phases = B.rand(nx, ny//2 + 1) * 2 * B.pi
 
     # Extract corresponding power spectrum slice
     power_spectrum_half = power_spectrum[:, :ny//2 + 1]
 
     # Create complex amplitudes
-    complex_amplitudes = torch.sqrt(power_spectrum_half) * torch.exp(1j * phases)
+    complex_amplitudes = B.sqrt(power_spectrum_half) * B.exp(1j * phases)
 
     # Handle special cases for real output
     if ny % 2 == 0:
-        complex_amplitudes[:, -1] = complex_amplitudes[:, -1].real + 0j  # Nyquist freq real
+        complex_amplitudes[:, -1] = np.real(complex_amplitudes[:, -1]) + 0j  # Nyquist freq real
     if nx % 2 == 0:
-        complex_amplitudes[nx//2, :] = complex_amplitudes[nx//2, :].real + 0j  # Nyquist freq real
+        complex_amplitudes[nx//2, :] = np.real(complex_amplitudes[nx//2, :]) + 0j  # Nyquist freq real
         if ny % 2 == 0:
-            complex_amplitudes[nx//2, -1] = complex_amplitudes[nx//2, -1].real + 0j
+            complex_amplitudes[nx//2, -1] = np.real(complex_amplitudes[nx//2, -1]) + 0j
 
     # Inverse FFT to get real space (irfft2 handles Hermitian symmetry automatically)
-    fBm_2D = torch.fft.irfft2(complex_amplitudes, s=(nx, ny))
+    fBm_2D = B.irfft2(complex_amplitudes, s=(nx, ny))
 
     # Normalize to unit std
-    fBm_2D = fBm_2D - torch.mean(fBm_2D)  # Zero mean first
-    fBm_std = torch.std(fBm_2D)
+    fBm_2D = fBm_2D - B.mean(fBm_2D)  # Zero mean first
+    fBm_std = B.std(fBm_2D)
     if fBm_std > 1e-10:
         fBm_2D = fBm_2D / fBm_std
 
-    return fBm_2D.cpu().numpy()
+    return fBm_2D
 
 
 def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
@@ -214,16 +212,16 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
 
     # Generate or use provided Gaussian white noise
     if gaussian_noise is None:
-        noise = torch.randn(size, dtype=torch.float64, device=device)
+        noise = B.randn(size)
     else:
-        noise_tensor = torch.as_tensor(gaussian_noise, dtype=torch.float64, device=device)
-        if noise_tensor.numel() != output_size:
+        noise = B.asarray(gaussian_noise)
+        if noise.size != output_size:
             raise ValueError("Provided gaussian_noise must match the specified size.")
         if periodic:
             # Pad with additional noise
-            noise = torch.cat([noise_tensor, torch.randn(output_size, dtype=torch.float64, device=device)])
+            noise = B.concatenate([noise, B.randn(output_size)])
         else:
-            noise = noise_tensor
+            noise = noise
 
     # Determine processing based on H value
     if H < 0.5:
@@ -252,11 +250,11 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
 
     elif H == 0.5:
         # For H = 0.5: just integrate (standard Brownian motion)
-        result = torch.cumsum(noise, dim=0)
+        result = B.cumsum(noise, axis=0)
 
     else:  # H > 0.5
         # For H in (0.5, 1.5): integrate, then convolve with kernel exponent (H - 1/2) - 1 = H - 3/2
-        integrated = torch.cumsum(noise, dim=0)
+        integrated = B.cumsum(noise, axis=0)
 
         kernel_exponent = H - 1.5
 
@@ -285,9 +283,9 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         result = result[:size//2]
 
     # Normalize to unit std
-    result = result - torch.mean(result)  # Zero mean first
-    result_std = torch.std(result)
+    result = result - B.mean(result)  # Zero mean first
+    result_std = B.std(result)
     if result_std > 1e-10:
         result = result / result_std
 
-    return result.cpu().numpy()
+    return result

@@ -204,4 +204,6 @@ def main():
     return freqs, mean_fif_spectrum
 
 if __name__ == "__main__":
+    # scaleinvariance.set_backend('numpy')
+    print(f'Using backend "{scaleinvariance.get_backend()}"')
     freqs, fif_spectrum = main()

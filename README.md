@@ -8,24 +8,24 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 
 ## Current Features
 
-### Hurst Exponent Estimation
+### Analysis
+
+#### Hurst exponent estimation
 
 - **Haar fluctuation method**: `haar_fluctuation_hurst()`
 - **Structure function method**: `structure_function_hurst()`
 - **Spectral method**: `spectral_hurst()`
 
-All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Plotting data and fit line may be returned with `return_fit=True`.
+All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Data and fit line for plotting may be returned with `return_fit=True`.
 
 ### Simulation
 
-`pytorch` is leveraged for parallel and efficient simulation.
-
-[View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
-
 - **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
 - **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals (Example shown above)
-- **1D fractional Brownian motion**: `acausal_fBm_1D()` - 1D acausal fBm fields
-- **2D fractional Brownian motion**: `acausal_fBm_2D()` - Isotropic 2D fBm fields
+- **1D fractional Brownian motion**: `fBm_1D_circulant()`, `fBm_2D_circulant()`, `fBm_1D()` - Spectral synthesis and fractional integration methods
+- **2D fractional Brownian motion**: Isotropic 2D fBm fields
+
+[View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
 ## Installation
 
@@ -33,16 +33,44 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 pip install scaleinvariance
 ```
 
+## Performance
+
+By default, scaleinvariance uses NumPy for all computations. However, if PyTorch is installed, the package automatically detects it and uses PyTorch for simulation functions, providing potentially **huge** performance gains (depending on your machine):
+
+```bash
+# NumPy-only installation (minimal dependencies)
+pip install scaleinvariance
+
+# With PyTorch for faster simulations
+pip install scaleinvariance[torch]
+```
+
+Control backend explicitly:
+
+```python
+import scaleinvariance
+
+# Check current backend
+print(scaleinvariance.get_backend())  # 'torch' if available, else 'numpy'
+
+# Force specific backend
+scaleinvariance.set_backend('numpy')  # Always use NumPy
+scaleinvariance.set_backend('torch')  # Use torch (raises error if not installed)
+
+# Configure threading (defaults to 90% CPU count)
+scaleinvariance.set_num_threads(8)
+```
+
 ## Basic Usage
 
 ```python
-from scaleinvariance import acausal_fBm_1D, acausal_fBm_2D, FIF_1D, haar_fluctuation_hurst
+from scaleinvariance import fBm_1D_circulant, fBm_2D_circulant, FIF_1D, haar_fluctuation_hurst
 
 # Generate 1D fractional Brownian motion
-fBm_1d = acausal_fBm_1D(1024, H=0.7)
+fBm_1d = fBm_1D_circulant(1024, H=0.7)
 
-# Generate 2D fractional Brownian motion  
-fBm_2d = acausal_fBm_2D((512, 1024), H=0.7)
+# Generate 2D fractional Brownian motion
+fBm_2d = fBm_2D_circulant((512, 1024), H=0.7)
 
 # Generate multifractal FIF timeseries
 fif = FIF_1D(2**16, alpha=1.8, C1=0.1, H=0.3)
@@ -82,4 +110,5 @@ Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 ## Requirements
 
 - Python ≥ 3.8
-- NumPy, SciPy, PyTorch, Matplotlib
+- NumPy, SciPy
+- PyTorch (optional, for simulation speedup)
