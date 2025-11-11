@@ -26,7 +26,7 @@ def main():
     if args.seed is not None:
         np.random.seed(args.seed)
 
-    field = scaleinvariance.FIF_2D(
+    field = scaleinvariance.FIF_ND(
         size=(args.size, width),
         alpha=args.alpha,
         C1=args.C1,
@@ -51,7 +51,7 @@ def main():
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
     cbar.set_label('Field value', rotation=270, labelpad=15)
 
-    title = f"FIF_2D: H={args.H}, C1={args.C1}, alpha={args.alpha}"
+    title = f"FIF_ND: H={args.H}, C1={args.C1}, alpha={args.alpha}"
     if args.periodic:
         title += " (periodic)"
     if args.log:

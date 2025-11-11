@@ -42,10 +42,10 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     print(f"Generating {n_samples} FIF_2D simulations of size {size}x{size}...")
     
     # Generate all FIF fields
-    print("Generating all FIF_2D fields...")
+    print("Generating all FIF_ND fields...")
     all_fields = []
     for i in range(n_samples):
-        data_2d = scaleinvariance.FIF_2D(size=(size//2, size*2), alpha=alpha, C1=C1, H=H)
+        data_2d = scaleinvariance.FIF_ND(size=(size//2, size*2), alpha=alpha, C1=C1, H=H)
         all_fields.append(data_2d)
         if (i+1) % max(1, n_samples//5) == 0:
             print(f"  Generated {i+1}/{n_samples}")

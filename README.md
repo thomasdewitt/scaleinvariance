@@ -21,7 +21,7 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 ### Simulation
 
 - **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
-- **2D fractionally integrated flux (FIF)**: `FIF_2D()` - Isotropic 2D multifractals (Example shown above)
+- **N-D fractionally integrated flux (FIF)**: `FIF_ND()` - Isotropic N-D multifractals for arbitrary dimensions (Example shown above)
 - **1D fractional Brownian motion**: `fBm_1D_circulant()`, `fBm_2D_circulant()`, `fBm_1D()` - Spectral synthesis and fractional integration methods
 - **2D fractional Brownian motion**: Isotropic 2D fBm fields
 

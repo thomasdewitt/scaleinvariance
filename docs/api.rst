@@ -13,7 +13,7 @@ Simulation
 
 .. autofunction:: scaleinvariance.FIF_1D
 
-.. autofunction:: scaleinvariance.FIF_2D
+.. autofunction:: scaleinvariance.FIF_ND
 
 Analysis
 --------

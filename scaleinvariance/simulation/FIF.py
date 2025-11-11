@@ -87,12 +87,12 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     The method reduces leading-order finite-size correction terms by applying
     exponential cutoffs and normalization corrections to reduce boundary effects.
 
-    Works for both 1D and 2D distance arrays with dx=2 spacing.
+    Works for 1D and N-D distance arrays with dx=2 spacing.
 
     Parameters
     ----------
     distance : ndarray
-        Distance array (1D or 2D), expects dx=2 spacing
+        Distance array (1D or N-D), expects dx=2 spacing
     exponent : float
         Power-law exponent for base kernel (e.g., -1/α' for flux, -1+H for H kernel)
     norm_ratio_exponent : float
@@ -111,10 +111,9 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     # Determine domain size for cutoff calculation
     if distance.ndim == 1:
         domain_size = distance.size
-    elif distance.ndim == 2:
-        domain_size = min(distance.shape)
     else:
-        raise ValueError("Distance array must be 1D or 2D")
+        # For N-D arrays, use minimum dimension size
+        domain_size = min(distance.shape)
 
     ratio = 2.0
     cutoff_length = domain_size / 2.0
@@ -159,19 +158,19 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
 
     Unified function for creating both flux and H kernels with LS2010 corrections.
-    Handles both 1D and 2D cases automatically.
+    Handles 1D and N-D cases automatically.
 
     Parameters
     ----------
     size : int or tuple
         For 1D: int specifying kernel size
-        For 2D: tuple (height, width)
+        For N-D: tuple of dimensions (e.g., (height, width) for 2D, (depth, height, width) for 3D)
     exponent : float
         Power-law exponent for base kernel
-        Examples: -1/α' for 1D flux, -2/α' for 2D flux, -1+H for 1D H kernel, -2+H for 2D H kernel
+        Examples: -1/α' for 1D flux, -d/α' for d-D flux, -1+H for 1D H kernel, -d+H for d-D H kernel
     norm_ratio_exponent : float
         Exponent for ratio in normalization factor
-        Examples: -1/α for 1D flux, -2/α for 2D flux, -H for H kernels
+        Examples: -1/α for 1D flux, -d/α for d-D flux, -H for H kernels
     causal : bool, optional
         Whether to make kernel causal (1D only). Default False.
     outer_scale : int, optional
@@ -184,10 +183,10 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
 
     Returns
     -------
-    torch.Tensor
+    ndarray
         Corrected kernel ready for convolution
     """
-    # Handle 1D vs 2D
+    # Handle 1D vs N-D
     if isinstance(size, int):
         # 1D case
         position_range = B.arange(-(size - 1), size, 2)
@@ -203,12 +202,16 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
             kernel[:size//2] = 0
 
     else:
-        # 2D case
-        height, width = size
-        y_coords = B.arange(-(height - 1), height, 2)
-        x_coords = B.arange(-(width - 1), width, 2)
-        Y, X = B.meshgrid(y_coords, x_coords, indexing='ij')
-        distance = B.sqrt(X**2 + Y**2)
+        # N-D case
+        # Create coordinate arrays for each dimension
+        coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
+
+        # Create N-D meshgrid
+        coord_grids = B.meshgrid(*coord_arrays, indexing='ij')
+
+        # Calculate Euclidean distance: sqrt(x1^2 + x2^2 + ... + xn^2)
+        distance = B.sqrt(sum(grid**2 for grid in coord_grids))
+
         kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
         # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
@@ -292,14 +295,14 @@ def periodic_convolve(signal, kernel):
     convolved = B.real(B.ifft(fft_signal * fft_kernel))
     return convolved
 
-def periodic_convolve_2d(signal, kernel):
+def periodic_convolve_nd(signal, kernel):
     """
-    Performs periodic convolution of two 2D arrays using Fourier methods.
+    Performs periodic convolution of two N-D arrays using Fourier methods.
     Both arrays must have the same shape.
 
     Parameters:
-        signal (ndarray): Input signal array (2D).
-        kernel (ndarray): Convolution kernel array (2D).
+        signal (ndarray): Input signal array (N-D).
+        kernel (ndarray): Convolution kernel array (N-D).
 
     Returns:
         ndarray: The result of the periodic convolution.
@@ -313,13 +316,13 @@ def periodic_convolve_2d(signal, kernel):
     if signal.shape != kernel.shape:
         raise ValueError("Signal and kernel must have the same shape for periodic convolution.")
 
-    # Shift kernel so zero-lag is at index (0,0) (required for FFT convolution)
+    # Shift kernel so zero-lag is at index (0,0,...,0) (required for FFT convolution)
     kernel = B.ifftshift(kernel)
 
-    fft_signal = B.fft2(signal)
-    fft_kernel = B.fft2(kernel)
+    fft_signal = B.fftn(signal)
+    fft_kernel = B.fftn(kernel)
 
-    convolved = B.real(B.ifft2(fft_signal * fft_kernel))
+    convolved = B.real(B.ifftn(fft_signal * fft_kernel))
     return convolved
 
 # FIF
@@ -514,55 +517,54 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     return observable
 
-def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
+def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method='LS2010', periodic=False):
     """
-    Generate a 2D Fractionally Integrated Flux (FIF) multifractal simulation.
-    
+    Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
+
     FIF is a multiplicative cascade model that generates multifractal fields with
-    specified Hurst exponent H, intermittency parameter C1, and Levy index alpha. 
+    specified Hurst exponent H, intermittency parameter C1, and Levy index alpha.
     The method follows Lovejoy & Schertzer 2010, including finite-size corrections.
     Returns field normalized by mean.
-    
+
     Algorithm:
-        1. Generate 2D extremal Lévy noise with stability parameter alpha
-        2. Convolve with corrected kernel (finite-size corrected |r|^(-2/alpha)) to create log-flux
-        3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux  
-        4. For H ≠ 0: Convolve flux with kernel |r|^(-2+H) to get observable
-    
+        1. Generate N-D extremal Lévy noise with stability parameter alpha
+        2. Convolve with corrected kernel (finite-size corrected |r|^(-d/alpha)) to create log-flux
+        3. Scale by (C1)^(1/alpha) and exponentiate to get conserved flux
+        4. For H ≠ 0: Convolve flux with kernel |r|^(-d+H) to get observable
+
     Parameters
     ----------
-    size : int or tuple of ints
-        Size of simulation. If int, creates square array (size x size).
-        If tuple, specifies (height, width). Must be even numbers.
+    size : tuple of ints
+        Size of simulation as tuple specifying dimensions (e.g., (height, width) for 2D,
+        (depth, height, width) for 3D). All dimensions must be even numbers.
     alpha : float
         Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
     C1 : float
-        Codimension of the mean, controls intermittency strength. 
+        Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
     H : float
         Hurst exponent in (0, 1). Controls correlation structure.
-    levy_noise : torch.Tensor, optional
-        Pre-generated 2D Lévy noise for reproducibility. Must have same shape as simulation.
+    levy_noise : ndarray, optional
+        Pre-generated N-D Lévy noise for reproducibility. Must have same shape as simulation.
     outer_scale : int, optional
-        Large-scale cutoff. Defaults to max(height, width).
+        Large-scale cutoff. Defaults to max(dimensions).
     outer_scale_width_factor : float, optional
         Controls transition width for outer scale. Transition width = outer_scale * width_factor.
         Default is 2.0.
     kernel_construction_method : str, optional
         Method for constructing convolution kernels. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        Note: 'naive' method is not yet implemented for 2D.
     periodic : bool, optional
-        If False (default), doubles domain size internally and returns one quadrant to
+        If False (default), doubles domain size internally and returns one hyper-octant to
         suppress periodic artifacts. If True, keeps the simulation strictly periodic
         with the provided size.
-    
+
     Returns
     -------
     numpy.ndarray
-        2D array of simulated multifractal field values
-        
+        N-D array of simulated multifractal field values
+
     Raises
     ------
     ValueError
@@ -571,87 +573,90 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         If C1 <= 0 (must be positive for multifractal behavior)
     ValueError
         If provided levy_noise doesn't match specified size
-        
+
     Examples
     --------
-    >>> # Basic 2D multifractal with strong intermittency  
-    >>> fif = FIF_2D(512, alpha=1.8, C1=0.1, H=0.3)
-    >>> 
-    >>> # Rectangular domain
-    >>> fif = FIF_2D((256, 512), alpha=1.5, C1=0.05, H=0.2)
-    
+    >>> # 2D multifractal with strong intermittency
+    >>> fif = FIF_ND((512, 512), alpha=1.8, C1=0.1, H=0.3)
+    >>>
+    >>> # 3D multifractal
+    >>> fif = FIF_ND((128, 128, 128), alpha=1.5, C1=0.05, H=0.2)
+
     Notes
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
-    - Always uses finite-size corrections and non-causal kernels for 2D
+    - Always uses finite-size corrections and non-causal kernels for N-D
     - Does not support negative H values (use FIF_1D for H < 0)
     """
-    # Handle size parameter
-    if isinstance(size, int):
-        output_height, output_width = size, size
-    else:
-        output_height, output_width = size
+    # Handle size parameter and infer dimension
+    if not isinstance(size, tuple):
+        raise ValueError("size must be a tuple of dimensions (e.g., (512, 512) for 2D)")
 
-    # Determine simulation domain size
-    sim_height = output_height if periodic else output_height * 2
-    sim_width = output_width if periodic else output_width * 2
+    output_size = size
+    ndim = len(size)
 
-    if C1 == 0:
-        fbm = fBm_2D_circulant((sim_height, sim_width), H)
-        return fbm if periodic else fbm[:output_height, :output_width]
+    # Determine simulation domain size (double each dimension if not periodic)
+    sim_size = tuple(s if periodic else s * 2 for s in output_size)
+
+    # C1==0 shortcut: use fBm for 2D only
+    if C1 == 0 and ndim == 2:
+        fbm = fBm_2D_circulant(sim_size, H)
+        return fbm if periodic else fbm[tuple(slice(s) for s in output_size)]
 
     if outer_scale is None:
-        outer_scale = max(sim_height, sim_width)
-        
-    if sim_height % 2 != 0 or sim_width % 2 != 0:
-        raise ValueError("Height and width must be even numbers; powers of 2 are recommended.")
+        outer_scale = max(sim_size)
+
+    if any(s % 2 != 0 for s in sim_size):
+        raise ValueError("All dimensions must be even numbers; powers of 2 are recommended.")
 
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
-    
-    if alpha == 1: 
-        raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
+    if alpha == 1:
+        raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
     if not isinstance(H, (int, float)) or H < 0 or H > 1:
         raise ValueError("H must be a number between 0 and 1.")
 
+    # Generate or validate Lévy noise
     if levy_noise is None:
-        noise = extremal_levy(alpha, size=sim_height * sim_width).reshape(sim_height, sim_width)
+        total_size = np.prod(sim_size)
+        noise = extremal_levy(alpha, size=total_size).reshape(sim_size)
     else:
         levy_tensor = B.asarray(levy_noise)
         if periodic:
-            if levy_tensor.shape != (sim_height, sim_width):
+            if levy_tensor.shape != sim_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
             noise = levy_tensor
         else:
-            if levy_tensor.shape != (output_height, output_width):
+            if levy_tensor.shape != output_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
-            noise = extremal_levy(alpha, size=sim_height * sim_width).reshape(sim_height, sim_width)
-            noise[:output_height, :output_width] = levy_tensor
-
+            total_size = np.prod(sim_size)
+            noise = extremal_levy(alpha, size=total_size).reshape(sim_size)
+            # Insert provided noise at the beginning
+            noise[tuple(slice(s) for s in output_size)] = levy_tensor
 
     # Create flux kernel (kernel 1)
-    # Calculate exponent and normalization parameters for 2D flux kernel
+    # Calculate exponent and normalization parameters for N-D flux kernel
     alpha_prime = 1.0 / (1.0 - 1.0/alpha)
-    flux_exponent = -2.0 / alpha_prime
-    flux_norm_ratio_exp = -2.0 / alpha
+    flux_exponent = -float(ndim) / alpha_prime
+    flux_norm_ratio_exp = -float(ndim) / alpha
     flux_final_power = 1.0 / (alpha - 1.0)
 
     if kernel_construction_method == 'LS2010':
-        kernel1 = create_kernel_LS2010((sim_height, sim_width), flux_exponent, flux_norm_ratio_exp,
+        kernel1 = create_kernel_LS2010(sim_size, flux_exponent, flux_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
     else:
-        raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
+        raise ValueError(f"Unknown kernel_construction_method for N-D: {kernel_construction_method}")
 
     # Perform first convolution
-    integrated = periodic_convolve_2d(noise, kernel1)
+    integrated = periodic_convolve_nd(noise, kernel1)
 
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
@@ -660,28 +665,28 @@ def FIF_2D(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     del scaled
 
     if H == 0:
-        # Normalize and return first quadrant only to eliminate periodicity
+        # Normalize and return first hyper-octant only to eliminate periodicity
         flux = flux / B.mean(flux)
-        return flux if periodic else flux[:output_height, :output_width]
+        return flux if periodic else flux[tuple(slice(s) for s in output_size)]
 
     # Create H kernel (kernel 2)
-    # Calculate exponent and normalization parameters for 2D H kernel
-    H_exponent = -2.0 + H
+    # Calculate exponent and normalization parameters for N-D H kernel
+    H_exponent = -float(ndim) + H
     H_norm_ratio_exp = -H
 
     if kernel_construction_method == 'LS2010':
-        kernel2 = create_kernel_LS2010((sim_height, sim_width), H_exponent, H_norm_ratio_exp,
+        kernel2 = create_kernel_LS2010(sim_size, H_exponent, H_norm_ratio_exp,
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None)
     else:
-        raise ValueError(f"Unknown kernel_construction_method for 2D: {kernel_construction_method}")
-    
+        raise ValueError(f"Unknown kernel_construction_method for N-D: {kernel_construction_method}")
+
     # Perform second convolution
-    observable = periodic_convolve_2d(flux, kernel2)
+    observable = periodic_convolve_nd(flux, kernel2)
 
     # Normalize by mean
     observable = observable / B.mean(observable)
 
-    # Return full periodic field or first quadrant to eliminate periodicity
-    return observable if periodic else observable[:output_height, :output_width]
+    # Return full periodic field or first hyper-octant to eliminate periodicity
+    return observable if periodic else observable[tuple(slice(s) for s in output_size)]

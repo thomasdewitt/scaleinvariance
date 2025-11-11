@@ -7,7 +7,7 @@ analysis correctly recovers the input Hurst exponent across different scaling
 ranges in 2D fields.
 """
 import numpy as np
-from scaleinvariance import FIF_2D, structure_function_hurst, spectral_hurst
+from scaleinvariance import FIF_ND, structure_function_hurst, spectral_hurst
 
 # Test configuration
 KERNEL_METHOD = 'LS2010'  # Currently only 'LS2010' supported for 2D
@@ -46,7 +46,7 @@ def test_combination(H, C1, alpha):
     # Generate stack of realizations
     realizations = []
     for i in range(N_REALIZATIONS):
-        fif = FIF_2D(SIZE, alpha, C1, H,
+        fif = FIF_ND((SIZE, SIZE), alpha, C1, H,
                      kernel_construction_method=KERNEL_METHOD, periodic=False)
         realizations.append(fif)
 

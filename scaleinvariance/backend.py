@@ -134,6 +134,28 @@ def ifft2(x):
         return result.numpy()
 
 
+def fftn(x, axes=None):
+    """N-D FFT."""
+    if _backend == 'numpy':
+        return np.fft.fftn(x, axes=axes)
+    else:
+        x_torch = torch.as_tensor(x, dtype=torch.complex128)
+        # torch uses 'dim' instead of 'axes'
+        result = torch.fft.fftn(x_torch, dim=axes)
+        return result.numpy()
+
+
+def ifftn(x, axes=None):
+    """N-D inverse FFT."""
+    if _backend == 'numpy':
+        return np.fft.ifftn(x, axes=axes)
+    else:
+        x_torch = torch.as_tensor(x, dtype=torch.complex128)
+        # torch uses 'dim' instead of 'axes'
+        result = torch.fft.ifftn(x_torch, dim=axes)
+        return result.numpy()
+
+
 def rfft(x, axis=-1):
     """1D real FFT."""
     if _backend == 'numpy':
