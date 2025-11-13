@@ -92,8 +92,7 @@ def main():
     if args.anisotropic:
         print(f"  Using canonical anisotropic metric: spheroscale={args.spheroscale}, Hz={args.Hz}")
         # For non-periodic FIF, the simulation domain is doubled
-        sim_size = tuple(s * 2 for s in size)
-        scale_metric = canonical_scale_metric(sim_size, ls=args.spheroscale, Hz=args.Hz)
+        scale_metric = canonical_scale_metric(size, ls=args.spheroscale, Hz=args.Hz)
         
         scale_metric_dim = 23/9
 
@@ -103,7 +102,7 @@ def main():
         alpha=args.alpha,
         C1=args.C1,
         H=args.H,
-        periodic=False,
+        periodic=True,
         scale_metric=scale_metric,
         scale_metric_dim=scale_metric_dim
     )
