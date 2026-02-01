@@ -6,7 +6,7 @@ Tests FIF_2D simulation from scaleinvariance package and compares spectra
 against theoretical expectations including multifractal scaling corrections.
 Also visualizes the 2D field.
 
-Usage: python test_fif_2d_spectra.py [H] [C1] [alpha] [size] [nsims]
+Usage: python test_fif_3d_spectra.py [H] [C1] [alpha] [size] [nsims]
 Examples: 
   python test_fif_2d_spectra.py 0.7
   python test_fif_2d_spectra.py 0.7 0.08 1.8
@@ -24,7 +24,7 @@ def K(q, alpha, C1):
     if alpha == 1: return C1 * q * np.log(q)
     return C1 * (q**alpha - q) / (alpha - 1)
 
-def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
+def calculate_3d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     """
     Calculate and plot the power spectrum, Haar fluctuation, and structure function
     analysis of FIF_2D simulations, compare with theoretical scaling, and visualize the 2D field.
@@ -39,33 +39,33 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     Returns:
         dict: Results from all three analysis methods
     """
-    print(f"Generating {n_samples} FIF_2D simulations of size {(size//2, size*2)}...")
+    print(f"Generating {n_samples} FIF_2D simulations of size {(size//2, size//2, size*2)}...")
     
     # Generate all FIF fields
     all_fields = []
     for i in range(n_samples):
-        data_2d = scaleinvariance.FIF_ND(size=(size//2, size*2), alpha=alpha, C1=C1, H=H)
+        data_2d = scaleinvariance.FIF_ND(size=(size//2, size//2, size*2), alpha=alpha, C1=C1, H=H)
         all_fields.append(data_2d)
         if (i+1) % max(1, n_samples//5) == 0:
             print(f"  Generated {i+1}/{n_samples}")
     
     all_fields = np.array(all_fields)  # Shape: (n_samples, size, size)
-    field_for_display = all_fields[0].copy()
+    field_for_display = all_fields[0][0,:,:].copy()
     
     # Perform all three analyses using the efficient axis parameter
     print("Running spectral analysis...")
     H_spectral, H_spectral_err, freqs, psd, fit_line_spectral = scaleinvariance.spectral_hurst(
-        all_fields, min_wavelength=1, max_wavelength=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+        all_fields, min_wavelength=1, max_wavelength=None, axis=3, return_fit=True  # Analyze along last axis (rows)
     )
     
     print("Running Haar fluctuation analysis...")
     H_haar, H_haar_err, lags_haar, fluct, fit_line_haar = scaleinvariance.haar_fluctuation_hurst(
-        all_fields, min_sep=1, max_sep=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+        all_fields, min_sep=1, max_sep=None, axis=3, return_fit=True  # Analyze along last axis (rows)
     )
     
     print("Running structure function analysis...")
     H_sf, H_sf_err, lags_sf, sf_vals, fit_line_sf = scaleinvariance.structure_function_hurst(
-        all_fields, min_sep=1, max_sep=None, axis=2, return_fit=True  # Analyze along last axis (rows)
+        all_fields, min_sep=1, max_sep=None, axis=3, return_fit=True  # Analyze along last axis (rows)
     )
     
     # Calculate theoretical H value
@@ -94,7 +94,7 @@ def calculate_2d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     # Use log scaling for better visualization of multifractal structure
     field_log = np.log10(np.maximum(field_for_display, np.min(field_for_display[field_for_display > 0])))
     im = ax1.pcolormesh(field_log, cmap='plasma', shading='auto')
-    ax1.set_title(f'2D FIF Field (log₁₀)\nα={alpha:.2f}, C₁={C1:.3f}, H={H:.2f}')
+    ax1.set_title(f'Slice of 3D FIF Field (log₁₀)\nα={alpha:.2f}, C₁={C1:.3f}, H={H:.2f}')
     ax1.set_xlabel('X')
     ax1.set_ylabel('Y')
     ax1.set_aspect('equal')
@@ -198,7 +198,7 @@ def main():
             print(f"Error: {e}")
             sys.exit(1)
     else:
-        size = 1024  # Default size
+        size = 128  # Default size
 
     if len(sys.argv) > 5:
         try:
@@ -230,7 +230,7 @@ def main():
     
     # Run the analysis
     try:
-        results = calculate_2d_spectrum_and_visualize(
+        results = calculate_3d_spectrum_and_visualize(
             alpha, C1, H, size=size, n_samples=nsims
         )
         print("\nAnalysis completed successfully!")

@@ -2,12 +2,12 @@ import numpy as np
 from .. import backend as B
 
 
-def fBm_1D_circulant(size, H):
+def fBm_1D_circulant(size, H, periodic=True):
     """
     Generate fractional Brownian motion by spectral synthesis.
 
     Creates fBm with power spectrum |k|^(-β) where β = 2H + 1.
-    Uses random phases and inverse FFT to generate periodic time series.
+    Uses random phases and inverse FFT.
 
     Parameters
     ----------
@@ -16,14 +16,22 @@ def fBm_1D_circulant(size, H):
     H : float
         Hurst parameter. Typical range is (0, 1) for fBm, but negative values
         are also supported (H < 0 gives blue noise with β < 1).
+    periodic : bool, optional
+        If True (default), returns full periodic simulation suitable for periodic
+        boundary conditions. If False, doubles simulation size internally then
+        returns only the first half to eliminate periodicity artifacts.
 
     Returns
     -------
     numpy.ndarray
-        Generated fBm time series, zero mean, periodic
+        Generated 1D fBm, zero mean, unit std
     """
     if size & (size - 1) != 0:
         raise ValueError("Size must be power of 2")
+
+    output_size = size
+    if not periodic:
+        size *= 2  # Double size to eliminate periodicity artifacts
 
     # Frequency array with proper normalization for physical wavelengths
     k = B.fftfreq(size, d=1.0) * 2 * B.pi
@@ -45,6 +53,10 @@ def fBm_1D_circulant(size, H):
     # Inverse FFT to get real space
     fBm = B.real(B.ifft(complex_amplitudes))
 
+    # Return first half if non-periodic mode
+    if not periodic:
+        fBm = fBm[:output_size]
+
     # Normalize to unit std
     fBm = fBm - B.mean(fBm)  # Zero mean first
     fBm_std = B.std(fBm)
@@ -54,12 +66,12 @@ def fBm_1D_circulant(size, H):
     return fBm
 
 
-def fBm_2D_circulant(size, H):
+def fBm_2D_circulant(size, H, periodic=True):
     """
     Generate 2D fractional Brownian motion by spectral synthesis.
 
     Creates 2D fBm with rotationally symmetric power spectrum |k|^(-β) where β = 2H + 2.
-    Uses random phases and inverse FFT to generate periodic 2D random field.
+    Uses random phases and inverse FFT to generate 2D random field.
 
     Parameters
     ----------
@@ -68,22 +80,33 @@ def fBm_2D_circulant(size, H):
     H : float
         Hurst parameter. Typical range is (0, 1) for fBm, but negative values
         are also supported (H < 0 gives blue noise with β < 2).
+    periodic : bool, optional
+        If True (default), returns full periodic simulation suitable for periodic
+        boundary conditions. If False, doubles simulation size internally along
+        each dimension then returns only the first quadrant to eliminate
+        periodicity artifacts.
 
     Returns
     -------
     numpy.ndarray
-        Generated 2D fBm field, zero mean, periodic
+        Generated 2D fBm field, zero mean, unit std
     """
     if isinstance(size, int):
-        nx, ny = size, size
+        output_nx, output_ny = size, size
     else:
-        nx, ny = size
+        output_nx, output_ny = size
 
     # Convert to int if needed
-    nx, ny = int(nx), int(ny)
+    output_nx, output_ny = int(output_nx), int(output_ny)
 
-    if (nx & (nx - 1)) != 0 or (ny & (ny - 1)) != 0:
+    if (output_nx & (output_nx - 1)) != 0 or (output_ny & (output_ny - 1)) != 0:
         raise ValueError("All dimensions must be powers of 2")
+
+    # Double size if non-periodic
+    if not periodic:
+        nx, ny = output_nx * 2, output_ny * 2
+    else:
+        nx, ny = output_nx, output_ny
 
     # 2D frequency arrays with proper normalization for physical wavelengths
     # Assume unit grid spacing, so frequencies are in cycles per unit length
@@ -119,6 +142,10 @@ def fBm_2D_circulant(size, H):
 
     # Inverse FFT to get real space (irfft2 handles Hermitian symmetry automatically)
     fBm_2D = B.irfft2(complex_amplitudes, s=(nx, ny))
+
+    # Return first quadrant if non-periodic mode
+    if not periodic:
+        fBm_2D = fBm_2D[:output_nx, :output_ny]
 
     # Normalize to unit std
     fBm_2D = fBm_2D - B.mean(fBm_2D)  # Zero mean first
@@ -158,8 +185,9 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
     outer_scale_width_factor : float, optional
         Controls transition width for outer scale. Default is 2.0.
     periodic : bool, optional
-        If True, doubles simulation size then returns only first half to eliminate
-        periodicity artifacts. If False, returns full periodic simulation. Default True.
+        If True (default), returns full periodic simulation suitable for periodic
+        boundary conditions. If False, doubles simulation size internally then
+        returns only the first half to eliminate periodicity artifacts.
     gaussian_noise : torch.Tensor or numpy.ndarray, optional
         Pre-generated Gaussian noise for reproducibility. Must have same size as simulation.
     kernel_construction_method : str, optional
@@ -204,8 +232,8 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         raise ValueError("H must be a number in (-0.5, 1.5).")
 
     output_size = size
-    if periodic:
-        size *= 2  # Double size to eliminate periodicity
+    if not periodic:
+        size *= 2  # Double size to eliminate periodicity artifacts
 
     if outer_scale is None:
         outer_scale = output_size
@@ -217,11 +245,9 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         noise = B.asarray(gaussian_noise)
         if noise.size != output_size:
             raise ValueError("Provided gaussian_noise must match the specified size.")
-        if periodic:
-            # Pad with additional noise
+        if not periodic:
+            # Pad with additional noise for non-periodic mode
             noise = B.concatenate([noise, B.randn(output_size)])
-        else:
-            noise = noise
 
     # Determine processing based on H value
     if H < 0.5:
@@ -278,9 +304,9 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         if causal:
             result *= 2.0
 
-    # Return first half if periodic mode
-    if periodic:
-        result = result[:size//2]
+    # Return first half if non-periodic mode
+    if not periodic:
+        result = result[:output_size]
 
     # Normalize to unit std
     result = result - B.mean(result)  # Zero mean first

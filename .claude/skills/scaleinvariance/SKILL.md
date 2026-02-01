@@ -1,6 +1,6 @@
 ---
 name: scaleinvariance
-description: Use when working with scaleinvariance package for multifractal field simulation and analysis - Hurst exponent estimation, fractional Brownian motion (fBm), fractionally integrated flux (FIF), intermittency analysis, and Generalized Scale Invariance (GSI). Also use for scaling analysis of time series, turbulence data, atmospheric fields, or any task involving self-similar/multifractal processes.
+description: Use when working with scaleinvariance package for multifractal field simulation and analysis - Hurst exponent estimation, fractional Brownian motion (fBm), fractionally integrated flux (multiplicative cascades) (FIF), intermittency analysis, and Generalized Scale Invariance (GSI). Also use for scaling analysis of time series, turbulence data, atmospheric fields, or any task involving self-similar, cascade, or multifractal processes or fields.
 ---
 
 # scaleinvariance Package Reference
@@ -38,52 +38,54 @@ This applies to all analysis functions: `structure_function_hurst`, `haar_fluctu
 
 ### Hurst Exponent Estimation
 
-| Task | Function | Notes |
-|------|----------|-------|
-| **Recommended** for most cases | `structure_function_hurst` | First-order structure function scaling, robust |
-| Wavelet-based alternative | `haar_fluctuation_hurst` | Uses Haar wavelet convolution |
-| Spectral method | `spectral_hurst` | Uses power spectrum β = 2H + 1 |
+| Task                                        | Function                   | Notes                                                                                                                       |
+| ------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Recommended** cases when 0<H<1            | `structure_function_hurst` | First-order structure function scaling, robust                                                                              |
+| Wavelet-based alternative, works for -1<H<1 | `haar_fluctuation_hurst`   | Uses Haar wavelet convolution, first order                                                                                  |
+| Spectral method, works for all H            | `spectral_hurst`           | Uses power spectrum β = 2H + 1, uses second-order statistics so will not be equivalent to the above for multifractal fields |
 
 All three methods estimate the same H parameter but may give slightly different results. Structure function is recommended for most cases.
 
 ### Underlying Scaling Analysis
 
-| Task | Function | Notes |
-|------|----------|-------|
-| Structure function values | `structure_function_analysis` | Returns lags and S_n(r) values |
-| Haar fluctuation values | `haar_fluctuation_analysis` | Returns lags and fluctuation values |
-| Power spectral density | `spectral_analysis` | Returns binned frequencies and PSD |
+**Usually, the *_hurst methods above are preferred to the functions in this section, as the spectrum/scaling function may be obtained from them using a kwarg described below**
+
+| Task                      | Function                      | Notes                               |
+| ------------------------- | ----------------------------- | ----------------------------------- |
+| Structure function values | `structure_function_analysis` | Returns lags and S_n(r) values      |
+| Haar fluctuation values   | `haar_fluctuation_analysis`   | Returns lags and fluctuation values |
+| Power spectral density    | `spectral_analysis`           | Returns binned frequencies and PSD  |
 
 ### Intermittency Analysis
 
-| Task | Function | Notes |
-|------|----------|-------|
-| Estimate C1 parameter | `two_point_intermittency_exponent` | Uses two-point scaling to estimate intermittency |
-| Compute K(q) function | `K` | Returns K(q) = (C1/(alpha-1)) * (q^alpha - q) |
+| Task                  | Function                           | Notes                                                                 |
+| --------------------- | ---------------------------------- | --------------------------------------------------------------------- |
+| Estimate C1 parameter | `two_point_intermittency_exponent` | Uses two-point scaling to estimate intermittency                      |
+| Compute K(q) function | `K`                                | Returns Lovejoy and Schertzer's K(q) = (C1/(alpha-1)) * (q^alpha - q) |
 
 ### Simulation
 
-| Task | Function | Notes |
-|------|----------|-------|
-| 1D multifractal (FIF) | `FIF_1D` | Fractionally integrated flux with H, C1, alpha |
-| N-D multifractal (FIF) | `FIF_ND` | 2D, 3D, etc. with GSI support |
-| 1D fBm (spectral) | `fBm_1D_circulant` | Fast spectral synthesis, periodic |
-| 2D fBm (spectral) | `fBm_2D_circulant` | 2D spectral synthesis, periodic |
-| 1D fBm (fractional integration) | `fBm_1D` | Extended H range (-0.5, 1.5) |
+| Task                            | Function           | Notes                                          |
+| ------------------------------- | ------------------ | ---------------------------------------------- |
+| 1D multifractal (FIF)           | `FIF_1D`           | Fractionally integrated flux with H, C1, alpha |
+| N-D multifractal (FIF)          | `FIF_ND`           | 2D, 3D, etc. with GSI support                  |
+| 1D fBm (spectral)               | `fBm_1D_circulant` | Fast spectral synthesis, periodic              |
+| 2D fBm (spectral)               | `fBm_2D_circulant` | 2D spectral synthesis, periodic                |
+| 1D fBm (fractional integration) | `fBm_1D`           | Extended H range (-0.5, 1.5)                   |
 
 ### Generalized Scale Invariance (GSI)
 
-| Task | Function | Notes |
-|------|----------|-------|
-| Anisotropic scale metric | `canonical_scale_metric` | Creates stratified/anisotropic distance metric |
+| Task                     | Function                 | Notes                                                                                |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------ |
+| Anisotropic scale metric | `canonical_scale_metric` | Creates stratified/anisotropic distance metric, for use in FIF and fBm methods above |
 
 ### Backend Control
 
-| Task | Function | Notes |
-|------|----------|-------|
-| Set backend | `set_backend('numpy')` or `set_backend('torch')` | Torch is ~2-3x faster |
-| Get backend | `get_backend()` | Returns current backend name |
-| Set threads | `set_num_threads(n)` | Default: 90% CPU count |
+| Task        | Function                                         | Notes                                               |
+| ----------- | ------------------------------------------------ | --------------------------------------------------- |
+| Set backend | `set_backend('numpy')` or `set_backend('torch')` | Torch is often much faster but is a huge dependency |
+| Get backend | `get_backend()`                                  | Returns current backend name                        |
+| Set threads | `set_num_threads(n)`                             | Default: 90% CPU count                              |
 
 ## Function Signatures
 
@@ -187,7 +189,7 @@ scaleinvariance.FIF_1D(
     causal=True,               # Use causal kernels
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
-    kernel_construction_method='LS2010',  # or 'naive'
+    kernel_construction_method='LS2010',  # or 'naive', don't change this unless explicitely asked
     periodic=True              # Double size internally to eliminate artifacts
 ) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0)
 ```
@@ -209,6 +211,8 @@ scaleinvariance.FIF_ND(
 ```
 
 ### fBm Simulation
+
+Circulant methods are preferred. fBm uses a convolution with a power law kernel similar to FIF, but this is not as accurate. However, fBm_1D can be used to limit the outer scale or control the noise, or make causal simulations, for example.
 
 ```python
 scaleinvariance.fBm_1D_circulant(
@@ -248,8 +252,11 @@ scaleinvariance.canonical_scale_metric(
 ```
 
 **IMPORTANT for GSI with FIF_ND**: When using `canonical_scale_metric`, you must also specify `scale_metric_dim`:
+
 - For 2D: `scale_metric_dim = 1 + Hz`
 - For 3D: `scale_metric_dim = 2 + Hz`
+- For 4D: `scale_metric_dim = 3 + Hz`
+- ...
 
 ```python
 # Example: 2D GSI simulation
@@ -265,22 +272,26 @@ fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
 ## Parameter Interpretation
 
 ### Hurst Exponent (H)
+
 - H = 0.5: Random walk / uncorrelated increments
 - H > 0.5: Persistent / positively correlated increments
 - H < 0.5: Anti-persistent / negatively correlated increments
 - FIF_1D supports H in (-1, 1); negative H gives differenced processes
 
 ### Intermittency (C1)
+
 - C1 = 0: No intermittency (Gaussian, monofractal)
 - C1 > 0: Multifractal intermittency
 - Typical atmospheric values: C1 ~ 0.05-0.2
 
 ### Levy Stability (alpha)
+
 - alpha = 2: Gaussian (log-normal multifractal)
 - alpha < 2: Heavy-tailed (more extreme events)
 - alpha = 1 is singular and not supported
 
 ### Anisotropy (Hz)
+
 - Hz = 1: Isotropic (standard Euclidean)
 - Hz < 1: Stratified/layered structures (vertical scales slower)
 - Hz = 5/9 ~ 0.556: Typical atmospheric stratification
@@ -297,7 +308,7 @@ fif = scaleinvariance.FIF_ND((512, 256), alpha=1.7, C1=0.1, H=0.3,
 
 ## Backend Selection
 
-PyTorch backend provides ~2-3x speedup for simulations:
+PyTorch backend provides speedups, often quite significant, for simulations:
 
 ```python
 import scaleinvariance
