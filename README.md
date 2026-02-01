@@ -27,6 +27,22 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 
 [View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
+#### Agent Skill (Highly Recommended for Agents)
+
+An agent skill is included in this repository. For Claude Code:
+
+```bash
+mkdir -p ~/.claude/skills/scaleinvariance
+cp .claude/skills/scaleinvariance/SKILL.md ~/.claude/skills/scaleinvariance/
+```
+
+Codex:
+
+```bash
+mkdir -p ~/.codex/skills/scaleinvariance
+cp .claude/skills/scaleinvariance/SKILL.md ~/.codex/skills/scaleinvariance/
+```
+
 ## Installation
 
 ```bash
