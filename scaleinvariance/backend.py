@@ -176,6 +176,16 @@ def irfft2(x, s):
         return result.numpy()
 
 
+def irfftn(x, s):
+    """N-D inverse real FFT."""
+    if _backend == 'numpy':
+        return np.fft.irfftn(x, s=s)
+    else:
+        x_torch = torch.as_tensor(x, dtype=torch.complex128)
+        result = torch.fft.irfftn(x_torch, s=s)
+        return result.numpy()
+
+
 def ifftshift(x, axes=None):
     """Inverse FFT shift."""
     if _backend == 'numpy':

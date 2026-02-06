@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-FIF 2D Spectral Analysis Test Script
+FIF 3D Spectral Analysis Test Script
 
-Tests FIF_2D simulation from scaleinvariance package and compares spectra
+Tests FIF_ND (3D) simulation from scaleinvariance package and compares spectra
 against theoretical expectations including multifractal scaling corrections.
-Also visualizes the 2D field.
+Also visualizes the 3D field.
 
 Usage: python test_fif_3d_spectra.py [H] [C1] [alpha] [size] [nsims]
-Examples: 
-  python test_fif_2d_spectra.py 0.7
-  python test_fif_2d_spectra.py 0.7 0.08 1.8
-  python test_fif_2d_spectra.py 0.5 0.1 1.6 512
-  python test_fif_2d_spectra.py 0.7 0.15 1.8 256
+Examples:
+  python test_fif_3d_spectra.py 0.7
+  python test_fif_3d_spectra.py 0.7 0.08 1.8
+  python test_fif_3d_spectra.py 0.5 0.1 1.6 512
+  python test_fif_3d_spectra.py 0.7 0.15 1.8 256
 """
 
 import sys
@@ -27,7 +27,7 @@ def K(q, alpha, C1):
 def calculate_3d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     """
     Calculate and plot the power spectrum, Haar fluctuation, and structure function
-    analysis of FIF_2D simulations, compare with theoretical scaling, and visualize the 2D field.
+    analysis of FIF_ND (3D) simulations, compare with theoretical scaling, and visualize the 3D field.
     
     Parameters:
         alpha (float): Multifractal index for the Lévy noise.
@@ -39,7 +39,7 @@ def calculate_3d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     Returns:
         dict: Results from all three analysis methods
     """
-    print(f"Generating {n_samples} FIF_2D simulations of size {(size//2, size//2, size*2)}...")
+    print(f"Generating {n_samples} FIF_ND (3D) simulations of size {(size//2, size//2, size*2)}...")
     
     # Generate all FIF fields
     all_fields = []
@@ -222,7 +222,7 @@ def main():
     #     sys.exit(1)
     
     print("="*60)
-    print("FIF_2D Spectral Analysis and Visualization")
+    print("FIF_3D Spectral Analysis and Visualization")
     print("="*60)
     print(f"Parameters: α={alpha:.3f}, C₁={C1:.3f}, H={H:.3f}")
     print(f"Domain size: {size//2}×{size*2}")

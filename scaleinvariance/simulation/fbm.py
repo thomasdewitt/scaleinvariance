@@ -156,6 +156,113 @@ def fBm_2D_circulant(size, H, periodic=True):
     return fBm_2D
 
 
+def fBm_ND_circulant(size, H, periodic=True):
+    """
+    Generate N-dimensional fractional Brownian motion by spectral synthesis.
+
+    Creates N-D fBm with rotationally symmetric power spectrum |k|^(-β) where β = 2H + D.
+    Uses random phases and inverse FFT to generate N-D random field.
+
+    Parameters
+    ----------
+    size : tuple of ints
+        Size of N-D array. Each dimension must be power of 2.
+    H : float
+        Hurst parameter. Typical range is (0, 1) for fBm, but negative values
+        are also supported (H < 0 gives blue noise with β < D).
+    periodic : bool or tuple of bool, optional
+        If True (default), returns full periodic simulation suitable for periodic
+        boundary conditions. If False, doubles simulation size internally along
+        each dimension then returns only the first octant to eliminate
+        periodicity artifacts. Can also be a tuple of bool for per-axis control.
+
+    Returns
+    -------
+    numpy.ndarray
+        Generated N-D fBm field, zero mean, unit std
+    """
+    size = tuple(int(s) for s in size)
+    ndim = len(size)
+
+    # Handle periodic as bool or tuple
+    if isinstance(periodic, bool):
+        periodic = (periodic,) * ndim
+    else:
+        periodic = tuple(periodic)
+        if len(periodic) != ndim:
+            raise ValueError(f"periodic must be bool or tuple of length {ndim}")
+
+    # Validate dimensions are powers of 2
+    for i, s in enumerate(size):
+        if (s & (s - 1)) != 0:
+            raise ValueError(f"Dimension {i} size {s} must be power of 2")
+
+    # Compute output and working sizes
+    output_size = size
+    working_size = tuple(s * 2 if not p else s for s, p in zip(size, periodic))
+
+    # Create frequency arrays for each dimension
+    freq_arrays = [B.fftfreq(n, d=1.0) * 2 * B.pi for n in working_size]
+
+    # Create meshgrid of frequencies
+    freq_grids = B.meshgrid(*freq_arrays, indexing='ij')
+
+    # Compute radial frequency magnitude
+    K_squared = sum(kg**2 for kg in freq_grids)
+    K = B.sqrt(K_squared)
+
+    # Avoid division by zero at k=0
+    zero_idx = (0,) * ndim
+    K[zero_idx] = 1.0
+
+    # Power spectrum: |k|^(-β) where β = 2H + D for D dimensions
+    beta = 2 * H + ndim
+    power_spectrum = K ** (-beta)
+
+    # Use rfftn approach - only need half the last dimension
+    last_dim_half = working_size[-1] // 2 + 1
+    rfft_shape = working_size[:-1] + (last_dim_half,)
+
+    # Create random phases for the non-redundant portion
+    phases = B.rand(*rfft_shape) * 2 * B.pi
+
+    # Extract corresponding power spectrum slice
+    slices = tuple(slice(None) for _ in range(ndim - 1)) + (slice(None, last_dim_half),)
+    power_spectrum_half = power_spectrum[slices]
+
+    # Create complex amplitudes
+    complex_amplitudes = B.sqrt(power_spectrum_half) * B.exp(1j * phases)
+
+    # Handle Nyquist frequencies for real output
+    # Last dimension Nyquist (if even)
+    if working_size[-1] % 2 == 0:
+        slices_nyq = tuple(slice(None) for _ in range(ndim - 1)) + (-1,)
+        complex_amplitudes[slices_nyq] = np.real(complex_amplitudes[slices_nyq]) + 0j
+
+    # Other dimensions Nyquist planes (if even)
+    for d in range(ndim - 1):
+        if working_size[d] % 2 == 0:
+            slices_nyq = tuple(slice(None) if i != d else working_size[d] // 2
+                              for i in range(ndim - 1)) + (slice(None),)
+            complex_amplitudes[slices_nyq] = np.real(complex_amplitudes[slices_nyq]) + 0j
+
+    # Inverse FFT to get real space
+    fBm_ND = B.irfftn(complex_amplitudes, s=working_size)
+
+    # Return first octant if any dimension is non-periodic
+    if not all(periodic):
+        slices_output = tuple(slice(None, os) for os in output_size)
+        fBm_ND = fBm_ND[slices_output]
+
+    # Normalize to unit std
+    fBm_ND = fBm_ND - B.mean(fBm_ND)
+    fBm_std = B.std(fBm_ND)
+    if fBm_std > 1e-10:
+        fBm_ND = fBm_ND / fBm_std
+
+    return fBm_ND
+
+
 def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
            periodic=True, gaussian_noise=None, kernel_construction_method='naive'):
     """

@@ -1,6 +1,6 @@
 import numpy as np
 from .. import backend as B
-from .fbm import fBm_1D_circulant, fBm_2D_circulant
+from .fbm import fBm_1D_circulant, fBm_2D_circulant, fBm_ND_circulant
 
 def extremal_levy(alpha, size=1):
     """
@@ -673,9 +673,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     else:
         scale_metric_dim = float(scale_metric_dim)
 
-    # C1==0 shortcut: use fBm for 2D only
-    if C1 == 0 and ndim == 2:
-        fbm = fBm_2D_circulant(sim_size, H)
+    # C1==0 shortcut: use fBm (no intermittency)
+    if C1 == 0:
+        fbm = fBm_ND_circulant(sim_size, H, periodic=True)
         # Extract output based on per-axis periodicity
         output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
         return fbm[output_slices]
