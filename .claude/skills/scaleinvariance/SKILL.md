@@ -65,13 +65,13 @@ All three methods estimate the same H parameter but may give slightly different 
 
 ### Simulation
 
-| Task                            | Function           | Notes                                          |
-| ------------------------------- | ------------------ | ---------------------------------------------- |
-| 1D multifractal (FIF)           | `FIF_1D`           | Fractionally integrated flux with H, C1, alpha |
-| N-D multifractal (FIF)          | `FIF_ND`           | 2D, 3D, etc. with GSI support                  |
-| 1D fBm (spectral)               | `fBm_1D_circulant` | Fast spectral synthesis, periodic              |
-| 2D fBm (spectral)               | `fBm_2D_circulant` | 2D spectral synthesis, periodic                |
-| 1D fBm (fractional integration) | `fBm_1D`           | Extended H range (-0.5, 1.5)                   |
+| Task                            | Function            | Notes                                          |
+| ------------------------------- | ------------------- | ---------------------------------------------- |
+| 1D multifractal (FIF)           | `FIF_1D`            | Fractionally integrated flux with H, C1, alpha |
+| N-D multifractal (FIF)          | `FIF_ND`            | 2D, 3D, etc. with GSI support                  |
+| 1D fBm (spectral)               | `fBm_1D_circulant`  | Fast spectral synthesis, periodic              |
+| N-D fBm (spectral)              | `fBm_ND_circulant`  | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
+| 1D fBm (fractional integration) | `fBm_1D`            | Extended H range (-0.5, 1.5)                   |
 
 ### Generalized Scale Invariance (GSI)
 
@@ -222,10 +222,11 @@ scaleinvariance.fBm_1D_circulant(
 ```
 
 ```python
-scaleinvariance.fBm_2D_circulant(
-    size,      # (nx, ny) tuple or int for square (must be powers of 2)
-    H          # Hurst parameter (typical: 0-1, but negative supported)
-) -> numpy.ndarray   # Zero mean, unit std, periodic
+scaleinvariance.fBm_ND_circulant(
+    size,      # Tuple of dimensions, e.g., (512, 512) for 2D, (256, 256, 128) for 3D (must be powers of 2)
+    H,         # Hurst parameter (typical: 0-1, but negative supported)
+    periodic=True  # Bool or tuple of bool for per-axis periodicity control
+) -> numpy.ndarray   # Zero mean, unit std
 ```
 
 ```python

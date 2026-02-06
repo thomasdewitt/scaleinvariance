@@ -1,6 +1,6 @@
 import numpy as np
 from .. import backend as B
-from .fbm import fBm_1D_circulant, fBm_2D_circulant, fBm_ND_circulant
+from .fbm import fBm_1D_circulant, fBm_ND_circulant
 
 def extremal_levy(alpha, size=1):
     """

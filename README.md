@@ -22,8 +22,9 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 
 - **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
 - **N-D fractionally integrated flux (FIF)**: `FIF_ND()` - Isotropic N-D multifractals for arbitrary dimensions (Example shown above)
-- **1D fractional Brownian motion**: `fBm_1D_circulant()`, `fBm_2D_circulant()`, `fBm_1D()` - Spectral synthesis and fractional integration methods
-- **2D fractional Brownian motion**: Isotropic 2D fBm fields
+- **1D fractional Brownian motion**: `fBm_1D_circulant()` - Fast spectral synthesis
+- **N-D fractional Brownian motion**: `fBm_ND_circulant()` - Isotropic N-D (2D, 3D, 4D, etc.) fBm fields
+- **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
 
 [View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
@@ -80,13 +81,16 @@ scaleinvariance.set_num_threads(8)
 ## Basic Usage
 
 ```python
-from scaleinvariance import fBm_1D_circulant, fBm_2D_circulant, FIF_1D, haar_fluctuation_hurst
+from scaleinvariance import fBm_1D_circulant, fBm_ND_circulant, FIF_1D, haar_fluctuation_hurst
 
 # Generate 1D fractional Brownian motion
 fBm_1d = fBm_1D_circulant(1024, H=0.7)
 
 # Generate 2D fractional Brownian motion
-fBm_2d = fBm_2D_circulant((512, 1024), H=0.7)
+fBm_2d = fBm_ND_circulant((512, 512), H=0.7)
+
+# Generate 3D fractional Brownian motion
+fBm_3d = fBm_ND_circulant((256, 256, 128), H=0.7)
 
 # Generate multifractal FIF timeseries
 fif = FIF_1D(2**16, alpha=1.8, C1=0.1, H=0.3)
