@@ -7,9 +7,11 @@ Simulation
 .. automodule:: scaleinvariance.simulation
    :members:
 
-.. autofunction:: scaleinvariance.acausal_fBm_1D
+.. autofunction:: scaleinvariance.fBm_1D_circulant
 
-.. autofunction:: scaleinvariance.acausal_fBm_2D
+.. autofunction:: scaleinvariance.fBm_ND_circulant
+
+.. autofunction:: scaleinvariance.fBm_1D
 
 .. autofunction:: scaleinvariance.FIF_1D
 

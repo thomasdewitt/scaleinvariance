@@ -71,7 +71,7 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
 
     for i, lag in enumerate(lags):
         # If lag is odd or too large, assign NaN and skip processing.
-        if lag % 2 != 0 or lag >= max_sep:
+        if lag % 2 != 0 or lag > max_sep:
             haar_flucs.append(np.nan)
             continue
             

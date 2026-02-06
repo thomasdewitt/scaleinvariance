@@ -383,8 +383,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
         - 'naive': Simple power-law kernels without corrections
     periodic : bool, optional
-        If True, doubles simulation size then returns only first half to eliminate periodicity artifacts.
-        If False, returns full periodic simulation. Default True.
+        If True (default), returns full periodic simulation suitable for periodic
+        boundary conditions. If False, doubles simulation size internally then
+        returns only the first half to eliminate periodicity artifacts.
 
     Returns
     -------
@@ -420,8 +421,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     if C1 == 0 and not causal:
         if levy_noise is not None:
             raise ValueError('noise argument not supported for C1=0')
-        result = fBm_1D_circulant(size, H)
-        return result[:output_size] if periodic else result
+        result = fBm_1D_circulant(output_size, H, periodic=periodic)
+        return result
 
     if not isinstance(C1, (int, float)) or C1 <= 0:
         raise ValueError("C1 must be a positive number.")
@@ -704,7 +705,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         noise = extremal_levy(alpha, size=total_size).reshape(sim_size)
     else:
         levy_tensor = B.asarray(levy_noise)
-        if periodic:
+        if all(periodic_tuple):
             if levy_tensor.shape != sim_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
             noise = levy_tensor
