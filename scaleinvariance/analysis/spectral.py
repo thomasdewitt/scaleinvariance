@@ -59,7 +59,7 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
     p_valid = psd[valid]
 
     # Create logarithmic bins
-    bins = np.logspace(np.log10(f_valid.min()), np.log10(f_valid.max()), nbins + 1)
+    bins = np.logspace(np.log10(f_valid.min()), np.log10(f_valid.max()), nbins + 1, dtype=np.float64)
     
     # Bin the data
     binned_freq = []
@@ -69,8 +69,8 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
         if np.any(in_bin):
             binned_freq.append(f_valid[in_bin].mean())
             binned_psd.append(p_valid[in_bin].mean())
-    
-    return np.array(binned_freq), np.array(binned_psd)
+
+    return np.array(binned_freq, dtype=np.float64), np.array(binned_psd, dtype=np.float64)
 
 
 def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axis=0, return_fit=False):

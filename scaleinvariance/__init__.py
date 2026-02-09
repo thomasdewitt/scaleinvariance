@@ -7,7 +7,7 @@ This package provides tools for:
 - Fractional Brownian motion simulation
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.1"
 __author__ = "Thomas DeWitt"
 
 from . import backend

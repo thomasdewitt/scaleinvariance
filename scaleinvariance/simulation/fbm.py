@@ -47,7 +47,7 @@ def fBm_1D_circulant(size, H, periodic=True):
 
     # Ensure Hermitian symmetry for real output
     if size % 2 == 0:
-        complex_amplitudes[size//2] = np.real(complex_amplitudes[size//2]) + 0j
+        complex_amplitudes[size//2] = B.real(complex_amplitudes[size//2]) + 0j
     complex_amplitudes[size//2+1:] = B.conj(B.flip(complex_amplitudes[1:size//2], axis=0))
 
     # Inverse FFT to get real space
@@ -147,14 +147,14 @@ def fBm_ND_circulant(size, H, periodic=True):
     # Last dimension Nyquist (if even)
     if working_size[-1] % 2 == 0:
         slices_nyq = tuple(slice(None) for _ in range(ndim - 1)) + (-1,)
-        complex_amplitudes[slices_nyq] = np.real(complex_amplitudes[slices_nyq]) + 0j
+        complex_amplitudes[slices_nyq] = B.real(complex_amplitudes[slices_nyq]) + 0j
 
     # Other dimensions Nyquist planes (if even)
     for d in range(ndim - 1):
         if working_size[d] % 2 == 0:
             slices_nyq = tuple(slice(None) if i != d else working_size[d] // 2
                               for i in range(ndim - 1)) + (slice(None),)
-            complex_amplitudes[slices_nyq] = np.real(complex_amplitudes[slices_nyq]) + 0j
+            complex_amplitudes[slices_nyq] = B.real(complex_amplitudes[slices_nyq]) + 0j
 
     # Inverse FFT to get real space
     fBm_ND = B.irfftn(complex_amplitudes, s=working_size)

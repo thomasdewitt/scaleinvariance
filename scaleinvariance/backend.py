@@ -22,7 +22,7 @@ _num_threads = int(os.cpu_count() * 0.9) if os.cpu_count() else 4
 # Auto-detect torch if available
 if _torch_available:
     _backend = 'torch'
-
+ 
 
 def set_backend(backend='numpy'):
     """
@@ -204,7 +204,7 @@ def ifftshift(x, axes=None):
 def randn(*shape):
     """Standard normal random numbers."""
     if _backend == 'numpy':
-        return np.random.randn(*shape)
+        return np.random.randn(*shape, dtype=np.float64)
     else:
         result = torch.randn(*shape, dtype=torch.float64)
         return result.numpy()
@@ -213,7 +213,7 @@ def randn(*shape):
 def rand(*shape):
     """Uniform random numbers [0, 1)."""
     if _backend == 'numpy':
-        return np.random.rand(*shape)
+        return np.random.rand(*shape, dtype=np.float64)
     else:
         result = torch.rand(*shape, dtype=torch.float64)
         return result.numpy()
@@ -237,9 +237,9 @@ def exponential(scale, size=None):
     """
     if _backend == 'numpy':
         if size is None:
-            return np.random.exponential(scale)
+            return np.random.exponential(scale, dtype=np.float64)
         else:
-            return np.random.exponential(scale, size=size)
+            return np.random.exponential(scale, size=size, dtype=np.float64)
     else:
         if size is None:
             size = 1
@@ -253,7 +253,7 @@ def exponential(scale, size=None):
 # Array Creation
 # ============================================================================
 
-def zeros(shape, dtype=None):
+def zeros(shape, dtype=np.float64):
     """Create zero array."""
     if _backend == 'numpy':
         return np.zeros(shape, dtype=dtype)
@@ -264,7 +264,7 @@ def zeros(shape, dtype=None):
         return result.numpy()
 
 
-def ones(shape, dtype=None):
+def ones(shape, dtype=np.float64):
     """Create ones array."""
     if _backend == 'numpy':
         return np.ones(shape, dtype=dtype)
@@ -275,7 +275,7 @@ def ones(shape, dtype=None):
         return result.numpy()
 
 
-def arange(start, stop=None, step=1, dtype=None):
+def arange(start, stop=None, step=1, dtype=np.float64):
     """Create array with evenly spaced values."""
     if _backend == 'numpy':
         return np.arange(start, stop, step, dtype=dtype)
@@ -289,7 +289,7 @@ def arange(start, stop=None, step=1, dtype=None):
         return result.numpy()
 
 
-def asarray(x, dtype=None):
+def asarray(x, dtype=np.float64):
     """Convert to array."""
     if _backend == 'numpy':
         return np.asarray(x, dtype=dtype)

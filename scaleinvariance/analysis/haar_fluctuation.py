@@ -74,9 +74,9 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         if lag % 2 != 0 or lag > max_sep:
             haar_flucs.append(np.nan)
             continue
-            
+
         # Construct Haar kernel
-        kernel = np.ones(lag) / (lag/2)
+        kernel = np.ones(lag, dtype=np.float64) / (lag/2)
         kernel[:lag//2] *= -1
 
         # Embed the 1D kernel into an n-D kernel with its values along the specified axis.
@@ -97,7 +97,7 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         mean_absolute_haar_fluctuation = np.nanmean(abs_conv)
         haar_flucs.append(mean_absolute_haar_fluctuation)
 
-    return np.array(lags), np.array(haar_flucs)
+    return np.array(lags, dtype=np.float64), np.array(haar_flucs, dtype=np.float64)
 
 
 def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False):
