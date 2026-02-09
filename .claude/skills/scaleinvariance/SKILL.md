@@ -183,10 +183,11 @@ scaleinvariance.K(
 scaleinvariance.FIF_1D(
     size,                      # Length (must be even, power of 2 recommended)
     alpha,                     # Levy stability parameter in (0, 2), != 1
-    C1,                        # Codimension of mean (intermittency), must be > 0
+    C1,                        # Codimension of mean (intermittency), must be >= 0
+                               # C1 = 0 routes to fBm (requires causal=False)
     H,                         # Hurst exponent in (-1, 1)
     levy_noise=None,           # Pre-generated noise for reproducibility
-    causal=True,               # Use causal kernels
+    causal=True,               # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method='LS2010',  # or 'naive', don't change this unless explicitely asked
@@ -198,7 +199,8 @@ scaleinvariance.FIF_1D(
 scaleinvariance.FIF_ND(
     size,                      # Tuple of dimensions, e.g., (512, 512) or (256, 256, 128)
     alpha,                     # Levy stability parameter in (0, 2), != 1
-    C1,                        # Codimension of mean (intermittency), must be > 0
+    C1,                        # Codimension of mean (intermittency), must be >= 0
+                               # C1 = 0 routes to fBm_ND_circulant()
     H,                         # Hurst exponent in (0, 1)
     levy_noise=None,           # Pre-generated noise for reproducibility
     outer_scale=None,          # Large-scale cutoff (default: max(size))
@@ -281,7 +283,9 @@ fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
 
 ### Intermittency (C1)
 
-- C1 = 0: No intermittency (Gaussian, monofractal)
+- C1 = 0: No intermittency (monofractal) - FIF functions route internally to fBm
+  - FIF_1D with C1=0 requires causal=False (fBm cannot be causal)
+  - FIF_ND with C1=0 works normally (no causal parameter)
 - C1 > 0: Multifractal intermittency
 - Typical atmospheric values: C1 ~ 0.05-0.2
 

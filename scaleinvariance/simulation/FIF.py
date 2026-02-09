@@ -366,6 +366,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     C1 : float
         Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
+        Special case: C1 = 0 routes to fBm (no intermittency), but requires
+        causal=False since fBm cannot be causal.
     H : float
         Hurst exponent in (-1, 1). Controls correlation structure.
     levy_noise : torch.Tensor, optional
@@ -397,7 +399,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     ValueError
         If size is not even or H is outside valid range (-1, 1)
     ValueError
-        If C1 <= 0 (must be positive for multifractal behavior)
+        If C1 < 0 or if C1 = 0 with causal=True (fBm cannot be causal)
     ValueError
         If provided levy_noise doesn't match specified size
 
@@ -405,11 +407,16 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     --------
     >>> # Basic multifractal with strong intermittency
     >>> fif = FIF_1D(1024, alpha=1.8, C1=0.1, H=0.3)
+    >>>
+    >>> # Monofractal case (C1=0 routes to fBm, requires causal=False)
+    >>> fbm = FIF_1D(1024, alpha=1.8, C1=0, H=0.3, causal=False)
 
     Notes
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
+    - C1 = 0: Routes internally to fBm_1D_circulant() for monofractal case
+      (requires causal=False since fBm cannot be causal)
     """
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
@@ -424,8 +431,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
         result = fBm_1D_circulant(output_size, H, periodic=periodic)
         return result
 
-    if not isinstance(C1, (int, float)) or C1 <= 0:
-        raise ValueError("C1 must be a positive number.")
+    if not isinstance(C1, (int, float)) or C1 < 0:
+        raise ValueError("C1 must be a non-negative number.")
+
+    if C1 == 0 and causal:
+        raise ValueError("C1=0 requires causal=False (fBm cannot be causal)")
 
     H_int = 0
     if H < 0:
@@ -556,6 +566,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     C1 : float
         Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
+        Special case: C1 = 0 routes to fBm_ND_circulant() (no intermittency).
     H : float
         Hurst exponent in (0, 1). Controls correlation structure.
     levy_noise : ndarray, optional
@@ -600,7 +611,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     ValueError
         If size dimensions are not even or H is outside valid range (0, 1)
     ValueError
-        If C1 <= 0 (must be positive for multifractal behavior)
+        If C1 < 0 (must be non-negative; C1 = 0 routes to fBm)
     ValueError
         If provided levy_noise doesn't match specified size
 
@@ -614,6 +625,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     >>>
     >>> # 2D with per-axis periodicity (periodic in x, non-periodic in y)
     >>> fif = FIF_ND((256, 256), alpha=1.6, C1=0.08, H=0.4, periodic=(True, False))
+    >>>
+    >>> # Monofractal case (C1=0 routes to fBm_ND_circulant)
+    >>> fbm = FIF_ND((512, 512), alpha=1.8, C1=0, H=0.3)
     >>>
     >>> # Using custom GSI norm (example with anisotropic scaling)
     >>> import numpy as np
@@ -635,6 +649,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
     - Always uses finite-size corrections and non-causal kernels for N-D
     - Does not support negative H values (use FIF_1D for H < 0)
+    - C1 = 0: Routes internally to fBm_ND_circulant() for monofractal case
     """
     # Handle size parameter and infer dimension
     if not isinstance(size, tuple):
@@ -687,8 +702,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     if any(s % 2 != 0 for s in sim_size):
         raise ValueError("All dimensions must be even numbers; powers of 2 are recommended.")
 
-    if not isinstance(C1, (int, float)) or C1 <= 0:
-        raise ValueError("C1 must be a positive number.")
+    if not isinstance(C1, (int, float)) or C1 < 0:
+        raise ValueError("C1 must be a non-negative number.")
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
