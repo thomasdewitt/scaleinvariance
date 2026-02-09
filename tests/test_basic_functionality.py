@@ -11,7 +11,8 @@ from scaleinvariance import (
     fBm_1D_circulant, fBm_ND_circulant, fBm_1D,
     FIF_1D, FIF_ND,
     structure_function_hurst, haar_fluctuation_hurst, spectral_hurst,
-    structure_function_analysis, haar_fluctuation_analysis, spectral_analysis
+    structure_function_analysis, haar_fluctuation_analysis, spectral_analysis,
+    set_backend, get_backend
 )
 
 
@@ -244,6 +245,23 @@ class TestAnalysisFunctions:
 
 class TestBackendConsistency:
     """Test that backend operations maintain float64 dtype."""
+
+    @pytest.fixture(params=['numpy', 'torch'], autouse=True)
+    def setup_backend(self, request):
+        """Setup and teardown for each backend test."""
+        original_backend = get_backend()
+        backend = request.param
+
+        # Skip torch tests if torch is not available
+        if backend == 'torch':
+            try:
+                import torch
+            except ImportError:
+                pytest.skip("PyTorch not installed")
+
+        set_backend(backend)
+        yield backend
+        set_backend(original_backend)
 
     def test_fif_1d_dtype_consistency(self):
         """Ensure FIF_1D always returns float64."""

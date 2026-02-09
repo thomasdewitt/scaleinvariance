@@ -97,7 +97,7 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         mean_absolute_haar_fluctuation = np.nanmean(abs_conv)
         haar_flucs.append(mean_absolute_haar_fluctuation)
 
-    return np.array(lags, dtype=np.float64), np.array(haar_flucs, dtype=np.float64)
+    return np.array(lags, dtype=np.int64), np.array(haar_flucs, dtype=np.float64)
 
 
 def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False):

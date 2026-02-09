@@ -204,7 +204,7 @@ def ifftshift(x, axes=None):
 def randn(*shape):
     """Standard normal random numbers."""
     if _backend == 'numpy':
-        return np.random.randn(*shape, dtype=np.float64)
+        return np.random.randn(*shape)
     else:
         result = torch.randn(*shape, dtype=torch.float64)
         return result.numpy()
@@ -213,7 +213,7 @@ def randn(*shape):
 def rand(*shape):
     """Uniform random numbers [0, 1)."""
     if _backend == 'numpy':
-        return np.random.rand(*shape, dtype=np.float64)
+        return np.random.rand(*shape)
     else:
         result = torch.rand(*shape, dtype=torch.float64)
         return result.numpy()
@@ -237,9 +237,9 @@ def exponential(scale, size=None):
     """
     if _backend == 'numpy':
         if size is None:
-            return np.random.exponential(scale, dtype=np.float64)
+            return np.random.exponential(scale)
         else:
-            return np.random.exponential(scale, size=size, dtype=np.float64)
+            return np.random.exponential(scale, size=size)
     else:
         if size is None:
             size = 1
@@ -258,9 +258,21 @@ def zeros(shape, dtype=np.float64):
     if _backend == 'numpy':
         return np.zeros(shape, dtype=dtype)
     else:
-        if dtype is None:
-            dtype = torch.float64
-        result = torch.zeros(shape, dtype=dtype)
+        # Convert numpy dtype to torch dtype
+        if dtype == np.float64 or dtype is None:
+            torch_dtype = torch.float64
+        elif dtype == np.float32:
+            torch_dtype = torch.float32
+        elif dtype == np.int32:
+            torch_dtype = torch.int32
+        elif dtype == np.int64:
+            torch_dtype = torch.int64
+        elif dtype == np.complex128:
+            torch_dtype = torch.complex128
+        else:
+            torch_dtype = torch.float64  # Default fallback
+
+        result = torch.zeros(shape, dtype=torch_dtype)
         return result.numpy()
 
 
@@ -269,9 +281,21 @@ def ones(shape, dtype=np.float64):
     if _backend == 'numpy':
         return np.ones(shape, dtype=dtype)
     else:
-        if dtype is None:
-            dtype = torch.float64
-        result = torch.ones(shape, dtype=dtype)
+        # Convert numpy dtype to torch dtype
+        if dtype == np.float64 or dtype is None:
+            torch_dtype = torch.float64
+        elif dtype == np.float32:
+            torch_dtype = torch.float32
+        elif dtype == np.int32:
+            torch_dtype = torch.int32
+        elif dtype == np.int64:
+            torch_dtype = torch.int64
+        elif dtype == np.complex128:
+            torch_dtype = torch.complex128
+        else:
+            torch_dtype = torch.float64  # Default fallback
+
+        result = torch.ones(shape, dtype=torch_dtype)
         return result.numpy()
 
 
@@ -280,12 +304,22 @@ def arange(start, stop=None, step=1, dtype=np.float64):
     if _backend == 'numpy':
         return np.arange(start, stop, step, dtype=dtype)
     else:
-        if dtype is None:
-            dtype = torch.float64
+        # Convert numpy dtype to torch dtype
+        if dtype == np.float64 or dtype is None:
+            torch_dtype = torch.float64
+        elif dtype == np.float32:
+            torch_dtype = torch.float32
+        elif dtype == np.int32:
+            torch_dtype = torch.int32
+        elif dtype == np.int64:
+            torch_dtype = torch.int64
+        else:
+            torch_dtype = torch.float64  # Default fallback
+
         if stop is None:
             stop = start
             start = 0
-        result = torch.arange(start, stop, step, dtype=dtype)
+        result = torch.arange(start, stop, step, dtype=torch_dtype)
         return result.numpy()
 
 
@@ -294,9 +328,21 @@ def asarray(x, dtype=np.float64):
     if _backend == 'numpy':
         return np.asarray(x, dtype=dtype)
     else:
-        if dtype is None:
-            dtype = torch.float64
-        x_torch = torch.as_tensor(x, dtype=dtype)
+        # Convert numpy dtype to torch dtype
+        if dtype == np.float64 or dtype is None:
+            torch_dtype = torch.float64
+        elif dtype == np.float32:
+            torch_dtype = torch.float32
+        elif dtype == np.int32:
+            torch_dtype = torch.int32
+        elif dtype == np.int64:
+            torch_dtype = torch.int64
+        elif dtype == np.complex128:
+            torch_dtype = torch.complex128
+        else:
+            torch_dtype = torch.float64  # Default fallback
+
+        x_torch = torch.as_tensor(x, dtype=torch_dtype)
         return x_torch.numpy()
 
 
