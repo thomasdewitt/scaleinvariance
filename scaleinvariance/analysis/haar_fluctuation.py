@@ -41,6 +41,8 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         raise ValueError("nan_behavior must be 'raise' or 'ignore'")
     
     data = np.asarray(data)
+    if np.issubdtype(data.dtype, np.integer):
+        data = data.astype(np.float32, copy=False)
     if (np.count_nonzero(np.isnan(data)) > 0) and (nan_behavior == 'raise'):
         raise ValueError("Input data contains NaN values; change nan_behavior to 'ignore' or check inputs.")
     
