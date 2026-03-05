@@ -406,7 +406,9 @@ def where(condition, x, y):
     if _backend == 'numpy':
         return np.where(condition, x, y)
     else:
-        cond_torch = torch.as_tensor(condition)
+        # np.asarray ensures we have a true ndarray (not a numpy scalar or
+        # Python bool), which some PyTorch versions cannot accept directly.
+        cond_torch = torch.as_tensor(np.asarray(condition, dtype=np.bool_))
         x_torch = torch.as_tensor(x)
         y_torch = torch.as_tensor(y)
         result = torch.where(cond_torch, x_torch, y_torch)

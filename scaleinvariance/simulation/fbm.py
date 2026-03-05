@@ -240,7 +240,8 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
     - For H in standard range (0, 1), fBm_1D_circulant may be more efficient
     """
     # Import here to avoid circular import
-    from .FIF import create_kernel_naive, create_kernel_LS2010, periodic_convolve
+    from .kernels import create_kernel_naive, create_kernel_LS2010, create_kernel_spectral
+    from .FIF import periodic_convolve
 
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
@@ -282,6 +283,10 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
             kernel = create_kernel_naive(size, kernel_exponent, causal=causal,
                                         outer_scale=outer_scale,
                                         outer_scale_width_factor=outer_scale_width_factor)
+        elif kernel_construction_method == 'spectral':
+            kernel = create_kernel_spectral(size, kernel_exponent, causal=causal,
+                                           outer_scale=outer_scale,
+                                           outer_scale_width_factor=outer_scale_width_factor)
         else:
             raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
@@ -312,6 +317,10 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
             kernel = create_kernel_naive(size, kernel_exponent, causal=causal,
                                         outer_scale=outer_scale,
                                         outer_scale_width_factor=outer_scale_width_factor)
+        elif kernel_construction_method == 'spectral':
+            kernel = create_kernel_spectral(size, kernel_exponent, causal=causal,
+                                           outer_scale=outer_scale,
+                                           outer_scale_width_factor=outer_scale_width_factor)
         else:
             raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 

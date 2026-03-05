@@ -159,7 +159,7 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
                          "Consider using larger arrays for more reliable Hurst estimation.",
                          UserWarning)
         else:
-            max_sep = array_size // 8
+            max_sep = array_size - 1
     
     if min_sep is None:
         if array_size <= 512:

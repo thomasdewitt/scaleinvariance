@@ -5,7 +5,7 @@ from scaleinvariance import FIF_1D, two_point_intermittency_exponent
 size = 2**25
 n_realizations = 2
 C1_values = [0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.6]
-alpha = 2.0
+alpha = 1.7
 H = 1/3
 order = 2
 min_sep = 2**9
