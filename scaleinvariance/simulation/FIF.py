@@ -27,8 +27,10 @@ def extremal_levy(alpha, size=1):
     cos_phi = B.where(B.abs(cos_phi) < eps, B.full_like(cos_phi, eps), cos_phi)
     abs_alpha1 = B.abs(alpha_t - 1)
     abs_alpha1 = B.where(abs_alpha1 < eps, B.full_like(abs_alpha1, eps), abs_alpha1)
+
     denom = B.cos(phi - alpha_t * (phi - phi0))
-    denom = B.where(B.abs(denom) < eps, B.full_like(denom, eps), denom)
+    denom = B.where(denom < eps, B.full_like(denom, eps), denom)
+
     R = B.where(R < eps, B.full_like(R, eps), R)
     sample = (
         B.sign(alpha_t - 1) *

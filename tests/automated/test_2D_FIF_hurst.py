@@ -11,7 +11,7 @@ from scaleinvariance import FIF_ND, structure_function_hurst, spectral_hurst
 
 # Test configuration
 KERNEL_METHOD = 'LS2010'  # Currently only 'LS2010' supported for 2D
-HURST_METHOD = 'structure_function'  # 'structure_function' or 'spectral'
+HURST_METHOD = 'spectral'  # 'structure_function' or 'spectral'
 N_REALIZATIONS = 10
 SIZE = 2**11  # 2048x2048 (reasonable for 2D)
 TOLERANCE = 0.05

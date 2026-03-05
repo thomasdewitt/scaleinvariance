@@ -244,7 +244,8 @@ def exponential(scale, size=None):
         if size is None:
             size = 1
         # torch uses 1/scale as parameter, numpy uses scale
-        dist = torch.distributions.Exponential(1.0 / scale)
+        rate = torch.tensor(1.0 / scale, dtype=torch.float64)
+        dist = torch.distributions.Exponential(rate)
         result = dist.sample(size if isinstance(size, tuple) else (size,))
         return result.numpy()
 
