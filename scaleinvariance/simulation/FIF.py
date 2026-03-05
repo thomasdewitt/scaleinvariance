@@ -128,7 +128,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     size : int
         Length of simulation (must be even, power of 2 recommended)
     alpha : float
-        Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
+        Lévy stability parameter in [0.5, 2] and != 1. Controls noise distribution.
+        Values < 0.5 are currently not implemented for FIF simulation.
     C1 : float
         Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
@@ -175,6 +176,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
         If C1 < 0 or if C1 = 0 with causal=True (fBm cannot be causal)
     ValueError
         If provided levy_noise doesn't match specified size
+    ValueError
+        If alpha < 0.5 or alpha == 1 (not implemented)
 
     Examples
     --------
@@ -188,6 +191,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
+    - alpha < 0.5 and alpha = 1 are not currently implemented
     - C1 = 0: Routes internally to fBm_1D_circulant() for monofractal case
       (requires causal=False since fBm cannot be causal)
     """
@@ -225,6 +229,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
+
+    if alpha < 0.5:
+        raise ValueError("alpha < 0.5 is not implemented for FIF simulation")
 
     if alpha == 1:
         raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
@@ -344,7 +351,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         Size of simulation as tuple specifying dimensions (e.g., (height, width) for 2D,
         (depth, height, width) for 3D). All dimensions must be even numbers.
     alpha : float
-        Lévy stability parameter in (0, 2) and != 1. Controls noise distribution.
+        Lévy stability parameter in [0.5, 2] and != 1. Controls noise distribution.
+        Values < 0.5 are currently not implemented for FIF simulation.
     C1 : float
         Codimension of the mean, controls intermittency strength.
         Must be > 0 for multifractal behavior.
@@ -400,6 +408,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         If C1 < 0 (must be non-negative; C1 = 0 routes to fBm)
     ValueError
         If provided levy_noise doesn't match specified size
+    ValueError
+        If alpha < 0.5 or alpha == 1 (not implemented)
 
     Examples
     --------
@@ -433,6 +443,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
+    - alpha < 0.5 and alpha = 1 are not currently implemented
     - Always uses finite-size corrections and non-causal kernels for N-D
     - Does not support negative H values (use FIF_1D for H < 0)
     - C1 = 0: Routes internally to fBm_ND_circulant() for monofractal case
@@ -497,6 +508,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
+
+    if alpha < 0.5:
+        raise ValueError("alpha < 0.5 is not implemented for FIF simulation")
 
     if alpha == 1:
         raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented

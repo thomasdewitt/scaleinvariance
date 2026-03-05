@@ -26,6 +26,8 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 - **N-D fractional Brownian motion**: `fBm_ND_circulant()` - Isotropic N-D (2D, 3D, 4D, etc.) fBm fields
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
 
+For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
+
 [View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
 #### Agent Skill (Highly Recommended for Agents)
