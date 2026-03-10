@@ -1,7 +1,11 @@
 import numpy as np
 from .. import backend as B
 from .fbm import fBm_1D_circulant, fBm_ND_circulant
-from .kernels import create_kernel_LS2010, create_kernel_naive, create_kernel_spectral
+from .kernels import (
+    create_kernel_LS2010,
+    create_kernel_naive,
+    create_kernel_spectral,
+)
 
 def extremal_levy(alpha, size=1):
     """
@@ -150,10 +154,14 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
+        - 'LS2010_spectral': spectral-response kernel for non-causal periodic runs,
+          LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
+        - 'LS2010_spectral': spectral-response kernel for non-causal periodic runs,
+          LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
         - 'spectral': Perfect power law in spectral space
     kernel_construction_method : str, optional
@@ -262,6 +270,16 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
                                       causal=causal, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
+    elif kernel_construction_method_flux == 'LS2010_spectral':
+        if causal:
+            kernel1 = create_kernel_LS2010(size, flux_exponent, flux_norm_ratio_exp,
+                                          causal=causal, outer_scale=outer_scale,
+                                          outer_scale_width_factor=outer_scale_width_factor,
+                                          final_power=flux_final_power)
+        else:
+            kernel1 = create_kernel_spectral(size, flux_exponent, causal=False, outer_scale=outer_scale,
+                                            outer_scale_width_factor=outer_scale_width_factor,
+                                            final_power=flux_final_power)
     elif kernel_construction_method_flux == 'naive':
         kernel1 = create_kernel_naive(size, flux_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)
@@ -300,6 +318,16 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
                                       causal=causal, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None)
+    elif kernel_construction_method_observable == 'LS2010_spectral':
+        if causal:
+            kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
+                                          causal=causal, outer_scale=outer_scale,
+                                          outer_scale_width_factor=outer_scale_width_factor,
+                                          final_power=None)
+        else:
+            kernel2 = create_kernel_spectral(size, H_exponent, causal=False, outer_scale=outer_scale,
+                                            outer_scale_width_factor=outer_scale_width_factor,
+                                            final_power=None)
     elif kernel_construction_method_observable == 'naive':
         kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)

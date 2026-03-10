@@ -1,0 +1,1 @@
+0.04882407407407406 'Added LS2010_spectral periodic spectral-response kernels for noncausal FIF_1D flux and observable filtering, with LS2010 fallback for causal runs'

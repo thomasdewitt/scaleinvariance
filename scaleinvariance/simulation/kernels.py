@@ -243,11 +243,33 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
 
 # Spectral kernel construction
 
-def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0):
-    # TODO: Build perfect power-law |f|^s in spectral space, apply Hanning high-pass
-    # for outer scale, IFFT to real space, normalize to match |x|^exponent.
-    # Current issue: periodicity of the DFT domain causes the kernel to wrap,
-    # and the zero-DC constraint forces a large mean subtraction that distorts
-    # the real-space kernel shape. Needs careful treatment of the spectral-space
-    # Hanning window and normalization.
-    raise NotImplementedError
+def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
+                           final_power=None):
+    """
+    Create a periodic kernel from an exact spectral-space power law.
+
+    The returned real-space kernel is the impulse response whose circular FFT is
+    the requested power-law transfer function. This is only valid for 1D
+    non-causal periodic filtering.
+    """
+    if not isinstance(size, int):
+        raise ValueError("Spectral kernel construction currently supports 1D only")
+    if causal:
+        raise ValueError("Spectral kernel construction does not support causal kernels")
+
+    effective_exponent = exponent if final_power is None else exponent * final_power
+    response_exponent = -(1.0 + effective_exponent)
+
+    freqs = np.abs(np.fft.fftfreq(size, d=1.0))
+    if outer_scale is None:
+        outer_scale = size
+    min_freq = 1.0 / float(outer_scale)
+    freqs_regularized = np.maximum(freqs, min_freq)
+
+    response = freqs_regularized ** response_exponent
+    if size > 1:
+        response[0] = response[1]
+
+    impulse_response = np.real(np.fft.ifft(response))
+    kernel = np.fft.fftshift(impulse_response)
+    return kernel.astype(np.float64, copy=False)
