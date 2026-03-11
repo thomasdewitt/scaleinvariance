@@ -7,7 +7,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 Simulation and analysis tools for **multifractal fields and time series**.
 
-**Documentation**: See CLAUDE.md in repository root.
+**Documentation**: See `README.md` plus the source docstrings in `scaleinvariance/simulation/`.
 
 ## Critical Usage Note
 
@@ -182,7 +182,7 @@ scaleinvariance.K(
 ```python
 scaleinvariance.FIF_1D(
     size,                      # Length (must be even, power of 2 recommended)
-    alpha,                     # Levy stability parameter in (0, 2), != 1
+    alpha,                     # Levy stability parameter in [0.5, 2], != 1
     C1,                        # Codimension of mean (intermittency), must be >= 0
                                # C1 = 0 routes to fBm (requires causal=False)
     H,                         # Hurst exponent in (-1, 1)
@@ -190,22 +190,24 @@ scaleinvariance.FIF_1D(
     causal=True,               # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
-    kernel_construction_method='LS2010',  # or 'naive', don't change this unless explicitely asked
-    periodic=True              # Double size internally to eliminate artifacts
+    kernel_construction_method_flux='LS2010',        # 'LS2010', 'LS2010_spectral', or 'naive'
+    kernel_construction_method_observable='LS2010',  # 'LS2010', 'LS2010_spectral', 'naive', or 'spectral'
+    periodic=True              # Full periodic output; set False to double internally and crop
 ) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0)
 ```
 
 ```python
 scaleinvariance.FIF_ND(
     size,                      # Tuple of dimensions, e.g., (512, 512) or (256, 256, 128)
-    alpha,                     # Levy stability parameter in (0, 2), != 1
+    alpha,                     # Levy stability parameter in [0.5, 2], != 1
     C1,                        # Codimension of mean (intermittency), must be >= 0
                                # C1 = 0 routes to fBm_ND_circulant()
     H,                         # Hurst exponent in (0, 1)
     levy_noise=None,           # Pre-generated noise for reproducibility
     outer_scale=None,          # Large-scale cutoff (default: max(size))
     outer_scale_width_factor=2.0,  # Transition width control
-    kernel_construction_method='LS2010',  # Only LS2010 for N-D
+    kernel_construction_method_flux='LS2010',        # 'LS2010' or 'LS2010_spectral'
+    kernel_construction_method_observable='LS2010',  # 'LS2010', 'LS2010_spectral', or 'spectral'
     periodic=False,            # Bool or tuple of bool for per-axis periodicity
     scale_metric=None,         # Custom GSI distance metric
     scale_metric_dim=None      # Scaling dimension (default: spatial dimension)
@@ -219,8 +221,9 @@ Circulant methods are preferred. fBm uses a convolution with a power law kernel 
 ```python
 scaleinvariance.fBm_1D_circulant(
     size,      # Length (must be power of 2)
-    H          # Hurst parameter (typical: 0-1, but negative supported)
-) -> numpy.ndarray   # Zero mean, unit std, periodic
+    H,         # Hurst parameter (typical: 0-1, but negative supported)
+    periodic=True
+) -> numpy.ndarray   # Zero mean, unit std
 ```
 
 ```python
@@ -238,11 +241,20 @@ scaleinvariance.fBm_1D(
     causal=True,               # Use causal kernels
     outer_scale=None,          # Large-scale cutoff
     outer_scale_width_factor=2.0,
-    periodic=True,             # Eliminate periodicity artifacts
+    periodic=True,             # Full periodic output; set False to double internally and crop
     gaussian_noise=None,       # Pre-generated noise
-    kernel_construction_method='naive'  # or 'LS2010'
+    kernel_construction_method='LS2010'  # 'naive', 'LS2010', or 'spectral'
 ) -> numpy.ndarray   # Zero mean, unit std
 ```
+
+## Kernel Selection
+
+- `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
+- Recommended FIF kernels are `'LS2010'` and `'LS2010_spectral'`.
+- `naive` FIF kernels remain available only for 1D comparison/debugging and emit a warning because their outputs are not remotely accurate.
+- `fBm_1D` still uses a single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
+- `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal periodic runs.
+- In `FIF_ND`, spectral kernels do not support custom `scale_metric`.
 
 ### GSI Scale Metric
 
@@ -293,6 +305,7 @@ fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
 
 - alpha = 2: Gaussian (log-normal multifractal)
 - alpha < 2: Heavy-tailed (more extreme events)
+- alpha < 0.5 is not currently implemented in FIF simulation
 - alpha = 1 is singular and not supported
 
 ### Anisotropy (Hz)
