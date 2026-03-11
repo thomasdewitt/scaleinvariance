@@ -91,18 +91,35 @@ def main():
         all_fif_data, return_fit=True, axis=1, min_wavelength=2.1)
     beta_fif = 2 * H_fif + 1
     
+    # Generate spectral FIF simulations for comparison
+    print(f"\nGenerating {n_sims} spectral FIF simulations...")
+    all_fif_spectral_data = []
+
+    for i in range(n_sims):
+        if i%2 == 0: print(f"  Spectral simulation {i+1}/{n_sims}...",)
+
+        fif_field_spectral = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
+                                                    kernel_construction_method_observable='LS2010_spectral', kernel_construction_method_flux='LS2010_spectral',
+                                                    outer_scale=outer_scale, periodic=True)
+        all_fif_spectral_data.append(fif_field_spectral)
+
+    all_fif_spectral_data = np.vstack(all_fif_spectral_data)
+    H_fif_spectral, H_err_fif_spectral, freqs_spectral, mean_fif_spectral_spectrum, fit_line_spectral = scaleinvariance.spectral_hurst(
+        all_fif_spectral_data, return_fit=True, axis=1, min_wavelength=2.1)
+    beta_fif_spectral = 2 * H_fif_spectral + 1
+
     # Generate uncorrected FIF simulations for comparison
     print(f"\nGenerating {n_sims} uncorrected FIF simulations...")
     all_fif_uncorrected_data = []
-    
+
     for i in range(n_sims):
         if i%2 == 0: print(f"  Uncorrected simulation {i+1}/{n_sims}...",)
-        
+
         # Generate uncorrected FIF simulation
         fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
                                                       kernel_construction_method='naive', outer_scale=outer_scale)
         all_fif_uncorrected_data.append(fif_field_uncorrected)
-    
+
     # Concatenate uncorrected simulations and analyze
     all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
     H_fif_uncorrected, H_err_fif_uncorrected, freqs_uncorrected, mean_fif_uncorrected_spectrum, fit_line_uncorrected = scaleinvariance.spectral_hurst(
@@ -121,10 +138,12 @@ def main():
     plt.subplot(2, 1, 1)
     
     # Plot raw averaged spectra
-    plt.loglog(freqs, mean_fif_spectrum, 'b-', linewidth=2, 
-              label=f'FIF corrected (H={H_fif:.2f}, β={beta_fif:.2f})')
-    plt.loglog(freqs_uncorrected, mean_fif_uncorrected_spectrum, 'orange', linewidth=2, 
-              label=f'FIF uncorrected (H={H_fif_uncorrected:.2f}, β={beta_fif_uncorrected:.2f})')
+    plt.loglog(freqs, mean_fif_spectrum, 'b-', linewidth=2,
+              label=f'FIF LS2010 (H={H_fif:.2f}, β={beta_fif:.2f})')
+    plt.loglog(freqs_spectral, mean_fif_spectral_spectrum, 'g-', linewidth=2,
+              label=f'FIF LS2010_spectral (H={H_fif_spectral:.2f}, β={beta_fif_spectral:.2f})')
+    plt.loglog(freqs_uncorrected, mean_fif_uncorrected_spectrum, 'orange', linewidth=2,
+              label=f'FIF naive (H={H_fif_uncorrected:.2f}, β={beta_fif_uncorrected:.2f})')
     
     # Add theoretical reference lines
     ref_freq_range = (freqs > freqs[len(freqs)//8]) & (freqs < freqs[7*len(freqs)//8])
@@ -162,10 +181,12 @@ def main():
     mid_idx = len(freqs) // 2
     mid_freq = freqs[mid_idx]
     mid_power_corrected = mean_fif_spectrum[mid_idx]
+    mid_power_spectral = mean_fif_spectral_spectrum[mid_idx]
     mid_power_uncorrected = mean_fif_uncorrected_spectrum[mid_idx]
-    
+
     # Normalize FIF spectra by their theoretical slope AND middle frequency power
     normalized_fif_spectrum = (mean_fif_spectrum * (freqs**(theoretical_beta_fif))) / (mid_power_corrected * (mid_freq**(theoretical_beta_fif)))
+    normalized_fif_spectral_spectrum = (mean_fif_spectral_spectrum * (freqs_spectral**(theoretical_beta_fif))) / (mid_power_spectral * (mid_freq**(theoretical_beta_fif)))
     normalized_fif_uncorrected_spectrum = (mean_fif_uncorrected_spectrum * (freqs_uncorrected**(theoretical_beta_fif))) / (mid_power_uncorrected * (mid_freq**(theoretical_beta_fif)))
     
     # Also normalize a theoretical fBm spectrum for comparison  
@@ -173,9 +194,11 @@ def main():
     normalized_fbm_theoretical = (theoretical_line_fbm_full * (freqs**(theoretical_beta_fif))) / (mid_power_corrected * (mid_freq**(theoretical_beta_fif)))
     
     plt.loglog(freqs, normalized_fif_spectrum, 'b-', linewidth=2,
-              label='FIF corrected normalized')
+              label='FIF LS2010 normalized')
+    plt.loglog(freqs_spectral, normalized_fif_spectral_spectrum, 'g-', linewidth=2,
+              label='FIF LS2010_spectral normalized')
     plt.loglog(freqs_uncorrected, normalized_fif_uncorrected_spectrum, 'orange', linewidth=2,
-              label='FIF uncorrected normalized')
+              label='FIF naive normalized')
     plt.loglog(freqs, normalized_fbm_theoretical, 'r--', linewidth=0.5,
               label='fBm normalized by FIF theory')
     
