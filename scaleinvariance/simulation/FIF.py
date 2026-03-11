@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from .. import backend as B
 from .fbm import fBm_1D_circulant, fBm_ND_circulant
 from .kernels import (
@@ -105,12 +106,23 @@ def periodic_convolve_nd(signal, kernel):
     convolved = B.real(B.ifftn(fft_signal * fft_kernel))
     return convolved
 
+
+def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable):
+    """Warn when legacy naive FIF kernels are selected."""
+    if 'naive' in (kernel_construction_method_flux, kernel_construction_method_observable):
+        warnings.warn(
+            "Naive FIF kernels are deprecated because their outputs are not remotely accurate. "
+            "Use kernel_construction_method_flux/kernel_construction_method_observable="
+            "'LS2010' or 'LS2010_spectral' instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+
 # FIF
 
 def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
            outer_scale_width_factor=2.0, kernel_construction_method_flux='LS2010',
-           kernel_construction_method_observable='LS2010', periodic=True,
-           kernel_construction_method=None):
+           kernel_construction_method_observable='LS2010', periodic=True):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -164,8 +176,6 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
           LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
         - 'spectral': Perfect power law in spectral space
-    kernel_construction_method : str, optional
-        Deprecated. If provided, sets both flux and observable methods.
     periodic : bool, optional
         If True (default), returns full periodic simulation suitable for periodic
         boundary conditions. If False, doubles simulation size internally then
@@ -203,10 +213,6 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     - C1 = 0: Routes internally to fBm_1D_circulant() for monofractal case
       (requires causal=False since fBm cannot be causal)
     """
-    # Handle deprecated kernel_construction_method parameter
-    if kernel_construction_method is not None:
-        kernel_construction_method_flux = kernel_construction_method
-        kernel_construction_method_observable = kernel_construction_method
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
 
@@ -243,6 +249,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
     if alpha == 1:
         raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
+
+    _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable)
 
     if levy_noise is None:
         noise = extremal_levy(alpha, size=size)
@@ -357,8 +365,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method_flux='LS2010', kernel_construction_method_observable='LS2010',
-           periodic=False, scale_metric=None, scale_metric_dim=None,
-           kernel_construction_method=None):
+           periodic=False, scale_metric=None, scale_metric_dim=None):
     """
     Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -397,11 +404,12 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
+        - 'LS2010_spectral': exact isotropic spectral-response kernel for periodic N-D runs
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-    kernel_construction_method : str, optional
-        Deprecated. If provided, sets both flux and observable methods.
+        - 'LS2010_spectral': exact isotropic spectral-response kernel for periodic N-D runs
+        - 'spectral': exact isotropic spectral-response kernel
     periodic : bool or tuple of bool, optional
         Controls periodicity behavior for each axis.
         - If bool: applies same periodicity to all axes (default False)
@@ -472,14 +480,12 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
     - alpha < 0.5 and alpha = 1 are not currently implemented
-    - Always uses finite-size corrections and non-causal kernels for N-D
+    - N-D kernels are always non-causal
+    - Spectral N-D kernels currently assume the default isotropic Fourier metric and
+      do not support custom `scale_metric`
     - Does not support negative H values (use FIF_1D for H < 0)
     - C1 = 0: Routes internally to fBm_ND_circulant() for monofractal case
     """
-    # Handle deprecated kernel_construction_method parameter
-    if kernel_construction_method is not None:
-        kernel_construction_method_flux = kernel_construction_method
-        kernel_construction_method_observable = kernel_construction_method
     # Handle size parameter and infer dimension
     if not isinstance(size, tuple):
         raise ValueError("size must be a tuple of dimensions (e.g., (512, 512) for 2D)")
@@ -576,6 +582,13 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power, scale_metric=scale_metric)
+    elif kernel_construction_method_flux == 'LS2010_spectral':
+        if scale_metric is not None:
+            raise ValueError("Spectral N-D kernels do not support custom scale_metric")
+        kernel1 = create_kernel_spectral(sim_size, flux_exponent, causal=False, outer_scale=outer_scale,
+                                        outer_scale_width_factor=outer_scale_width_factor,
+                                        final_power=flux_final_power,
+                                        scaling_dimension=scale_metric_dim)
     else:
         raise ValueError(f"Unknown kernel_construction_method_flux for N-D: {kernel_construction_method_flux}")
 
@@ -604,6 +617,12 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None, scale_metric=scale_metric)
+    elif kernel_construction_method_observable in ('LS2010_spectral', 'spectral'):
+        if scale_metric is not None:
+            raise ValueError("Spectral N-D kernels do not support custom scale_metric")
+        kernel2 = create_kernel_spectral(sim_size, H_exponent, causal=False, outer_scale=outer_scale,
+                                        outer_scale_width_factor=outer_scale_width_factor,
+                                        final_power=None, scaling_dimension=scale_metric_dim)
     else:
         raise ValueError(f"Unknown kernel_construction_method_observable for N-D: {kernel_construction_method_observable}")
 

@@ -244,32 +244,49 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
 # Spectral kernel construction
 
 def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
-                           final_power=None):
+                           final_power=None, scaling_dimension=None):
     """
     Create a periodic kernel from an exact spectral-space power law.
 
     The returned real-space kernel is the impulse response whose circular FFT is
-    the requested power-law transfer function. This is only valid for 1D
-    non-causal periodic filtering.
+    the requested power-law transfer function. This is only valid for non-causal
+    periodic filtering.
     """
-    if not isinstance(size, int):
-        raise ValueError("Spectral kernel construction currently supports 1D only")
     if causal:
         raise ValueError("Spectral kernel construction does not support causal kernels")
 
-    effective_exponent = exponent if final_power is None else exponent * final_power
-    response_exponent = -(1.0 + effective_exponent)
+    if isinstance(size, int):
+        shape = (size,)
+        if scaling_dimension is None:
+            scaling_dimension = 1.0
+    else:
+        shape = tuple(size)
+        if scaling_dimension is None:
+            scaling_dimension = float(len(shape))
 
-    freqs = np.abs(np.fft.fftfreq(size, d=1.0))
+    effective_exponent = exponent if final_power is None else exponent * final_power
+    response_exponent = -(float(scaling_dimension) + effective_exponent)
+
+    freq_axes = [np.fft.fftfreq(n, d=1.0) for n in shape]
+    if len(shape) == 1:
+        freqs = np.abs(freq_axes[0])
+    else:
+        freq_grids = np.meshgrid(*freq_axes, indexing='ij')
+        freqs = np.sqrt(sum(grid**2 for grid in freq_grids))
+
     if outer_scale is None:
-        outer_scale = size
+        outer_scale = max(shape)
     min_freq = 1.0 / float(outer_scale)
     freqs_regularized = np.maximum(freqs, min_freq)
 
     response = freqs_regularized ** response_exponent
-    if size > 1:
+    if shape == (1,):
+        response[(0,)] = 1.0
+    elif len(shape) == 1:
         response[0] = response[1]
+    else:
+        response[(0,) * len(shape)] = response[(1,) + (0,) * (len(shape) - 1)]
 
-    impulse_response = np.real(np.fft.ifft(response))
+    impulse_response = np.real(np.fft.ifftn(response))
     kernel = np.fft.fftshift(impulse_response)
     return kernel.astype(np.float64, copy=False)

@@ -55,14 +55,14 @@ def main():
             sys.exit(1)
     else:
         causal = False  # Default causal value
-    
+
     print("=" * 50)
     print("FIF SPECTRAL ANALYSIS TEST")
     print("=" * 50)
     
     # Parameters
-    size = 2**20
-    n_sims = 100    # Number of simulations for averaging
+    size = 2**18
+    n_sims = 300    # Number of simulations for averaging
     outer_scale = size/100
     
     print(f"\nParameters:")
@@ -72,55 +72,70 @@ def main():
     print(f"  C1: {C1}")
     print(f"  Causal: {causal}")
     print(f"  Number of simulations: {n_sims}")
-    
-    # Generate corrected FIF simulations
-    print(f"\nGenerating {n_sims} corrected FIF simulations...")
+    print("  Noise usage: one explicit Levy-noise realization per simulation, reused across kernels")
+
+    print(f"\nGenerating {n_sims} paired FIF simulations...")
     all_fif_data = []
-    
+    all_fif_spectral_data = []
+    all_fif_uncorrected_data = []
+
     for i in range(n_sims):
-        if i%2 == 0: print(f"  Simulation {i+1}/{n_sims}...",)
-        
-        # Generate corrected FIF simulation
-        fif_field = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                         kernel_construction_method='LS2010', outer_scale=outer_scale)
+        if i % 50 == 0:
+            print(f"  Realization {i+1}/{n_sims}...")
+
+        levy_noise = scaleinvariance.simulation.FIF.extremal_levy(alpha, size=size)
+
+        fif_field = scaleinvariance.FIF_1D(
+            size,
+            alpha,
+            C1,
+            H=H,
+            causal=causal,
+            levy_noise=levy_noise,
+            kernel_construction_method_flux='LS2010',
+            kernel_construction_method_observable='LS2010',
+            outer_scale=outer_scale,
+        )
         all_fif_data.append(fif_field)
-    
+
+        fif_field_spectral = scaleinvariance.FIF_1D(
+            size,
+            alpha,
+            C1,
+            H=H,
+            causal=causal,
+            levy_noise=levy_noise,
+            kernel_construction_method_observable='LS2010_spectral',
+            kernel_construction_method_flux='LS2010_spectral',
+            outer_scale=outer_scale,
+            periodic=True,
+        )
+        all_fif_spectral_data.append(fif_field_spectral)
+
+        fif_field_uncorrected = scaleinvariance.FIF_1D(
+            size,
+            alpha,
+            C1,
+            H=H,
+            causal=causal,
+            levy_noise=levy_noise,
+            kernel_construction_method_flux='naive',
+            kernel_construction_method_observable='naive',
+            outer_scale=outer_scale,
+        )
+        all_fif_uncorrected_data.append(fif_field_uncorrected)
+
     # Concatenate all simulations and analyze with spectral_hurst
     all_fif_data = np.vstack(all_fif_data)
     H_fif, H_err_fif, freqs, mean_fif_spectrum, fit_line = scaleinvariance.spectral_hurst(
         all_fif_data, return_fit=True, axis=1, min_wavelength=2.1)
     beta_fif = 2 * H_fif + 1
-    
-    # Generate spectral FIF simulations for comparison
-    print(f"\nGenerating {n_sims} spectral FIF simulations...")
-    all_fif_spectral_data = []
-
-    for i in range(n_sims):
-        if i%2 == 0: print(f"  Spectral simulation {i+1}/{n_sims}...",)
-
-        fif_field_spectral = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                                    kernel_construction_method_observable='LS2010_spectral', kernel_construction_method_flux='LS2010_spectral',
-                                                    outer_scale=outer_scale, periodic=True)
-        all_fif_spectral_data.append(fif_field_spectral)
 
     all_fif_spectral_data = np.vstack(all_fif_spectral_data)
     H_fif_spectral, H_err_fif_spectral, freqs_spectral, mean_fif_spectral_spectrum, fit_line_spectral = scaleinvariance.spectral_hurst(
         all_fif_spectral_data, return_fit=True, axis=1, min_wavelength=2.1)
     beta_fif_spectral = 2 * H_fif_spectral + 1
 
-    # Generate uncorrected FIF simulations for comparison
-    print(f"\nGenerating {n_sims} uncorrected FIF simulations...")
-    all_fif_uncorrected_data = []
-
-    for i in range(n_sims):
-        if i%2 == 0: print(f"  Uncorrected simulation {i+1}/{n_sims}...",)
-
-        # Generate uncorrected FIF simulation
-        fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                                      kernel_construction_method='naive', outer_scale=outer_scale)
-        all_fif_uncorrected_data.append(fif_field_uncorrected)
-
-    # Concatenate uncorrected simulations and analyze
     all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
     H_fif_uncorrected, H_err_fif_uncorrected, freqs_uncorrected, mean_fif_uncorrected_spectrum, fit_line_uncorrected = scaleinvariance.spectral_hurst(
         all_fif_uncorrected_data, return_fit=True, axis=1, min_wavelength=2.1)

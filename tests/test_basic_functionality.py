@@ -68,6 +68,23 @@ class TestfBmSimulations:
         assert not np.any(np.isinf(result)), "Output contains infinite values"
         assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
 
+    def test_fBm_1D_default_kernel_is_ls2010(self):
+        """Default fBm_1D kernel should match explicit LS2010 selection."""
+        size = 128
+        gaussian_noise = np.random.default_rng(0).standard_normal(size)
+
+        default_result = fBm_1D(size, H=0.7, causal=False, periodic=True, gaussian_noise=gaussian_noise)
+        explicit_result = fBm_1D(
+            size,
+            H=0.7,
+            causal=False,
+            periodic=True,
+            gaussian_noise=gaussian_noise,
+            kernel_construction_method='LS2010',
+        )
+
+        np.testing.assert_allclose(default_result, explicit_result, rtol=1e-12, atol=1e-12)
+
 
 class TestFIFSimulations:
     """Test FIF (multifractal) simulation methods."""
@@ -149,6 +166,59 @@ class TestFIFSimulations:
 
         assert result.shape == size, f"Expected shape {size}, got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
+
+    def test_FIF_ND_spectral_kernel(self):
+        """Test N-D FIF with exact spectral kernels."""
+        size = (64, 64)
+        result = FIF_ND(
+            size,
+            alpha=1.8,
+            C1=0.1,
+            H=0.3,
+            periodic=True,
+            kernel_construction_method_flux='LS2010_spectral',
+            kernel_construction_method_observable='LS2010_spectral',
+        )
+
+        assert result.shape == size, f"Expected shape {size}, got {result.shape}"
+        assert not np.any(np.isnan(result)), "Output contains NaN values"
+        assert not np.any(np.isinf(result)), "Output contains infinite values"
+
+    def test_FIF_1D_naive_kernel_warns(self):
+        """Naive FIF kernels should emit a deprecation warning."""
+        with pytest.warns(FutureWarning, match="not remotely accurate"):
+            FIF_1D(
+                128,
+                alpha=1.8,
+                C1=0.1,
+                H=0.3,
+                causal=False,
+                kernel_construction_method_flux='naive',
+                kernel_construction_method_observable='naive',
+            )
+
+    def test_FIF_1D_removed_combined_kernel_argument(self):
+        """Deprecated combined kernel argument should no longer be accepted."""
+        with pytest.raises(TypeError):
+            FIF_1D(
+                128,
+                alpha=1.8,
+                C1=0.1,
+                H=0.3,
+                causal=False,
+                kernel_construction_method='LS2010',
+            )
+
+    def test_FIF_ND_removed_combined_kernel_argument(self):
+        """Deprecated combined kernel argument should no longer be accepted in N-D."""
+        with pytest.raises(TypeError):
+            FIF_ND(
+                (64, 64),
+                alpha=1.8,
+                C1=0.1,
+                H=0.3,
+                kernel_construction_method='LS2010',
+            )
 
 class TestAnalysisFunctions:
     """Test analysis methods on simulated data."""

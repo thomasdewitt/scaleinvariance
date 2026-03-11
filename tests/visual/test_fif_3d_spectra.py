@@ -19,6 +19,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scaleinvariance
 
+KERNEL_METHOD_FLUX = 'LS2010_spectral'
+KERNEL_METHOD_OBSERVABLE = 'LS2010_spectral'
+
 def K(q, alpha, C1):
     """Scaling function from multifractal theory"""
     if alpha == 1: return C1 * q * np.log(q)
@@ -44,7 +47,14 @@ def calculate_3d_spectrum_and_visualize(alpha, C1, H, size=1024, n_samples=10):
     # Generate all FIF fields
     all_fields = []
     for i in range(n_samples):
-        data_2d = scaleinvariance.FIF_ND(size=(size//2, size//2, size*2), alpha=alpha, C1=C1, H=H)
+        data_2d = scaleinvariance.FIF_ND(
+            size=(size//2, size//2, size*2),
+            alpha=alpha,
+            C1=C1,
+            H=H,
+            kernel_construction_method_flux=KERNEL_METHOD_FLUX,
+            kernel_construction_method_observable=KERNEL_METHOD_OBSERVABLE,
+        )
         all_fields.append(data_2d)
         if (i+1) % max(1, n_samples//5) == 0:
             print(f"  Generated {i+1}/{n_samples}")
@@ -225,6 +235,8 @@ def main():
     print("FIF_3D Spectral Analysis and Visualization")
     print("="*60)
     print(f"Parameters: α={alpha:.3f}, C₁={C1:.3f}, H={H:.3f}")
+    print(f"Flux kernel method: {KERNEL_METHOD_FLUX}")
+    print(f"Observable kernel method: {KERNEL_METHOD_OBSERVABLE}")
     print(f"Domain size: {size//2}×{size*2}")
     print("="*60)
     

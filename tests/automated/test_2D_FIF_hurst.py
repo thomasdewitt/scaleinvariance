@@ -10,7 +10,8 @@ import numpy as np
 from scaleinvariance import FIF_ND, structure_function_hurst, spectral_hurst
 
 # Test configuration
-KERNEL_METHOD = 'LS2010'  # Currently only 'LS2010' supported for 2D
+KERNEL_METHOD_FLUX = 'LS2010'
+KERNEL_METHOD_OBSERVABLE = 'LS2010'
 HURST_METHOD = 'spectral'  # 'structure_function' or 'spectral'
 N_REALIZATIONS = 10
 SIZE = 2**11  # 2048x2048 (reasonable for 2D)
@@ -47,7 +48,9 @@ def test_combination(H, C1, alpha):
     realizations = []
     for i in range(N_REALIZATIONS):
         fif = FIF_ND((SIZE, SIZE), alpha, C1, H,
-                     kernel_construction_method=KERNEL_METHOD, periodic=False)
+                     kernel_construction_method_flux=KERNEL_METHOD_FLUX,
+                     kernel_construction_method_observable=KERNEL_METHOD_OBSERVABLE,
+                     periodic=False)
         realizations.append(fif)
 
     # Stack along axis 0: shape = (N_REALIZATIONS, SIZE, SIZE)
@@ -109,7 +112,8 @@ def format_table_row(H, C1, alpha, results):
 def main():
     print("="*90)
     print("2D FIF Hurst Exponent Estimation Test")
-    print(f"Kernel method: {KERNEL_METHOD}")
+    print(f"Flux kernel method: {KERNEL_METHOD_FLUX}")
+    print(f"Observable kernel method: {KERNEL_METHOD_OBSERVABLE}")
     print(f"Hurst estimation method: {HURST_METHOD}")
     print(f"Realizations per test: {N_REALIZATIONS}")
     print(f"Size: {SIZE}x{SIZE}")

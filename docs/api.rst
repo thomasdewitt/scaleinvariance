@@ -1,6 +1,17 @@
 API Reference
 =============
 
+Notes
+-----
+
+`FIF_1D` and `FIF_ND` no longer accept the old combined
+`kernel_construction_method` argument. Use
+`kernel_construction_method_flux` and
+`kernel_construction_method_observable` instead.
+
+Naive FIF kernels remain available for comparison only and emit a warning
+because their outputs are not remotely accurate.
+
 Simulation
 ----------
 

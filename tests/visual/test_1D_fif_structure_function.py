@@ -82,7 +82,9 @@ def main():
 
         # Generate corrected FIF simulation
         fif_field = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                         kernel_construction_method='LS2010', outer_scale=outer_scale)
+                                         kernel_construction_method_flux='LS2010',
+                                         kernel_construction_method_observable='LS2010',
+                                         outer_scale=outer_scale)
         all_fif_data.append(fif_field)
 
     # Concatenate all simulations and analyze with structure_function_analysis
@@ -99,7 +101,9 @@ def main():
 
         # Generate uncorrected FIF simulation
         fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                                      kernel_construction_method='naive', outer_scale=outer_scale)
+                                                      kernel_construction_method_flux='naive',
+                                                      kernel_construction_method_observable='naive',
+                                                      outer_scale=outer_scale)
         all_fif_uncorrected_data.append(fif_field_uncorrected)
 
     # Concatenate uncorrected simulations and analyze

@@ -27,6 +27,7 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
 
 For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
+FIF methods now require explicit `kernel_construction_method_flux=` and `kernel_construction_method_observable=` arguments if you want to override the defaults; the old combined `kernel_construction_method=` shortcut has been removed. Naive FIF kernels are deprecated because their outputs are not remotely accurate.
 
 [View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
@@ -97,6 +98,17 @@ fBm_3d = fBm_ND_circulant((256, 256, 128), H=0.7)
 # Generate multifractal FIF timeseries
 fif = FIF_1D(2**16, alpha=1.8, C1=0.1, H=0.3)
 
+# Override FIF kernels explicitly if needed
+fif_spectral = FIF_1D(
+    2**16,
+    alpha=1.8,
+    C1=0.1,
+    H=0.3,
+    causal=False,
+    kernel_construction_method_flux='LS2010_spectral',
+    kernel_construction_method_observable='LS2010_spectral',
+)
+
 # Estimate Hurst exponent
 H_est, H_err = haar_fluctuation_hurst(fBm_1d)
 print(f"Estimated H = {H_est:.3f} ± {H_err:.3f}")
@@ -113,6 +125,22 @@ python tests/visual/test_2d_fbm.py 0.7
 ```
 
 FIF validation scripts, which test scaling over multiple ranges of scale, live in `tests/automated/` (see `test_1D_FIF_hurst.py` and `test_2D_FIF_hurst.py`). They are designed to be run as standalone Python programs, not via `pytest`, and they generate many large FIF realizations to reach statistical convergence. These scripts are also known to produce some failures, especially near grid scales, because finite-size effects are not fully mitigated by the LS2010 corrections.
+
+## Kernel Selection
+
+For FIF simulations:
+
+- `kernel_construction_method_flux` controls the cascade kernel.
+- `kernel_construction_method_observable` controls the final observable kernel.
+- Recommended values are `'LS2010'` and `'LS2010_spectral'`.
+- The old `kernel_construction_method=` argument is no longer accepted by `FIF_1D` or `FIF_ND`.
+- `naive` FIF kernels remain available only for comparison and debugging and emit a warning because they are not remotely accurate.
+
+For fBm:
+
+- `fBm_1D()` still uses the single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
+- `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal runs.
+- `fBm_ND_circulant()` is already spectral by construction and does not take a kernel selector.
 
 ## Examples
 

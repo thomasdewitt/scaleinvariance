@@ -174,7 +174,7 @@ def fBm_ND_circulant(size, H, periodic=True):
 
 
 def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
-           periodic=True, gaussian_noise=None, kernel_construction_method='naive'):
+           periodic=True, gaussian_noise=None, kernel_construction_method='LS2010'):
     """
     Generate 1D fractional Brownian motion by fractional integration of Gaussian noise.
 
@@ -209,8 +209,9 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         Pre-generated Gaussian noise for reproducibility. Must have same size as simulation.
     kernel_construction_method : str, optional
         Method for constructing convolution kernels. Options:
-        - 'naive': Simple power-law kernels without corrections (default)
-        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections
+        - 'naive': Simple power-law kernels without corrections
+        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
+        - 'spectral': Exact spectral-response kernel for non-causal periodic runs
 
     Returns
     -------
@@ -236,7 +237,7 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
     Notes
     -----
     - Computational complexity is O(N log N) due to FFT-based convolutions
-    - Uses naive power-law kernel without finite-size corrections
+    - Uses LS2010 finite-size corrected kernels by default
     - For H in standard range (0, 1), fBm_1D_circulant may be more efficient
     """
     # Import here to avoid circular import

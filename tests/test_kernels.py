@@ -14,7 +14,7 @@ import numpy as np
 from scaleinvariance.simulation.kernels import (
     create_kernel_naive, create_kernel_LS2010, create_kernel_spectral
 )
-from scaleinvariance.simulation.FIF import periodic_convolve
+from scaleinvariance.simulation.FIF import periodic_convolve, periodic_convolve_nd
 
 
 class TestKernelNaive:
@@ -146,6 +146,19 @@ class TestKernelSpectral:
         signal = np.random.default_rng(0).standard_normal(size)
         kernel = create_kernel_spectral(size, exponent=-1.0)
         filtered = periodic_convolve(signal, kernel)
+        np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
+
+    def test_nd_shape_and_dtype(self):
+        kernel = create_kernel_spectral((32, 48), -1.7)
+        assert kernel.shape == (32, 48)
+        assert kernel.dtype == np.float64
+        assert not np.any(np.isnan(kernel))
+
+    def test_nd_identity_for_zero_hurst_kernel(self):
+        size = (32, 32)
+        signal = np.random.default_rng(0).standard_normal(size)
+        kernel = create_kernel_spectral(size, exponent=-2.0)
+        filtered = periodic_convolve_nd(signal, kernel)
         np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
 
 

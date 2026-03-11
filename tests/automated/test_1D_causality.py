@@ -15,8 +15,16 @@ for H in [0, 0.3]:
         noise[spike_loc] = 10
 
         # Generate causal and acausal
-        fif_causal = FIF_1D(size, alpha, C1, H, levy_noise=noise, causal=True, periodic=True, kernel_construction_method=method)
-        fif_acausal = FIF_1D(size, alpha, C1, H, levy_noise=noise, causal=False, periodic=True, kernel_construction_method=method)
+        fif_causal = FIF_1D(
+            size, alpha, C1, H, levy_noise=noise, causal=True, periodic=True,
+            kernel_construction_method_flux=method,
+            kernel_construction_method_observable=method,
+        )
+        fif_acausal = FIF_1D(
+            size, alpha, C1, H, levy_noise=noise, causal=False, periodic=True,
+            kernel_construction_method_flux=method,
+            kernel_construction_method_observable=method,
+        )
 
         # If the system is causal, it does not know the spike is about to happen
         # We can look for symmetry about spike location

@@ -2,6 +2,12 @@
 
 This directory contains demonstration scripts showing the capabilities of the scaleinvariance package.
 
+Note: `FIF_1D` and `FIF_ND` now use explicit
+`kernel_construction_method_flux` and
+`kernel_construction_method_observable` arguments when overriding FIF kernel
+choices. The old combined `kernel_construction_method` shortcut has been
+removed for FIF.
+
 ## fif_comparison_demo.py
 
 This script demonstrates estimation of the Hurst exponent estimation in intermittent multifractal fields. It generates Fractionally Integrated Flux (FIF) simulations with different levels of intermittency (measured by $C_1$) and compares available estimation methods.
