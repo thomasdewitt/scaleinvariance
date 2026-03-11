@@ -10,7 +10,7 @@ import numpy as np
 from scaleinvariance import FIF_1D, structure_function_hurst, spectral_hurst
 
 # Test configuration
-KERNEL_METHOD = 'LS2010_spectral'  # 'LS2010', 'LS2010_spectral', or 'naive'
+KERNEL_METHOD = 'LS2010'  # 'LS2010', 'LS2010_spectral', or 'naive'
 HURST_METHOD = 'spectral'  # 'structure_function' or 'spectral'
 N_REALIZATIONS = 10
 SIZE = 2**22
@@ -49,7 +49,7 @@ def test_combination(H, C1, alpha, causal):
     realizations = []
     for i in range(N_REALIZATIONS):
         fif = FIF_1D(SIZE, alpha, C1, H, causal=causal,
-                     kernel_construction_method=KERNEL_METHOD, periodic=True)
+                     kernel_construction_method=KERNEL_METHOD)
         realizations.append(fif)
 
     # Stack along axis 0: shape = (N_REALIZATIONS, SIZE)
