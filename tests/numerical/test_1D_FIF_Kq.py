@@ -29,7 +29,7 @@ C1_VALUES    = [0.05, 0.1, 0.2]
 ALPHA_VALUES = [2.0, 1.7, 1.5]
 
 
-def test_combination(H, C1, alpha):
+def run_combination(H, C1, alpha):
     data = np.stack([
         FIF_1D(SIZE, alpha, C1, H,
                kernel_construction_method_flux=KERNEL_METHOD_FLUX,
@@ -72,7 +72,7 @@ def main():
         for C1 in C1_VALUES:
             for alpha in ALPHA_VALUES:
                 test_count += 1
-                H_fit, C1_fit, alpha_fit = test_combination(H, C1, alpha)
+                H_fit, C1_fit, alpha_fit = run_combination(H, C1, alpha)
 
                 H_ok     = abs(H_fit     - H)     < H_TOL
                 C1_ok    = abs(C1_fit    - C1)    < C1_TOL

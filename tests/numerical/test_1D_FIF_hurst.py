@@ -31,7 +31,7 @@ SCALING_RANGES = [
     (1000, 10000)
 ]
 
-def test_combination(H, C1, alpha, causal):
+def run_combination(H, C1, alpha, causal):
     """
     Test a single parameter combination.
 
@@ -143,7 +143,7 @@ def main():
             if C1 == 0.0:
                 test_count += 1
                 # Use dummy values for alpha and causal (not used when C1=0)
-                results = test_combination(H, C1, alpha=2.0, causal=False)
+                results = run_combination(H, C1, alpha=2.0, causal=False)
 
                 combo_passed = all(r['passed'] for r in results.values())
                 if combo_passed:
@@ -160,7 +160,7 @@ def main():
                         test_count += 1
 
                         # Run test
-                        results = test_combination(H, C1, alpha, causal)
+                        results = run_combination(H, C1, alpha, causal)
 
                         # Check if all ranges passed
                         combo_passed = all(r['passed'] for r in results.values())

@@ -509,15 +509,15 @@ def mean(x, axis=None):
 
 
 def std(x, axis=None):
-    """Standard deviation."""
+    """Standard deviation (population, ddof=0 — matches numpy default)."""
     if _backend == 'numpy':
         return np.std(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
         if axis is None:
-            result = torch.std(x_torch)
+            result = torch.std(x_torch, correction=0)
         else:
-            result = torch.std(x_torch, dim=axis)
+            result = torch.std(x_torch, dim=axis, correction=0)
         return result.numpy()
 
 

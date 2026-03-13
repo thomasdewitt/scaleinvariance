@@ -29,3 +29,6 @@ torch = ["torch"]
 
 [project.urls]
 Homepage = "https://github.com/thomasdewitt/scaleinvariance"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/functional"]

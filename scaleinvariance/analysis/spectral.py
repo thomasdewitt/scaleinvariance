@@ -32,6 +32,8 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
         raise ValueError("Input data must not be empty")
     if max_wavelength is not None and max_wavelength <= 0:
         raise ValueError("max_wavelength must be positive")
+    if min_wavelength is not None and min_wavelength <= 0:
+        raise ValueError("min_wavelength must be positive")
         
     n = data.shape[axis]
     # Compute the one-sided FFT and corresponding power spectral density along specified axis
