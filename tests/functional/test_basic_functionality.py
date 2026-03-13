@@ -153,6 +153,20 @@ class TestFIFSimulations:
         assert result.shape == size, f"Expected shape {size}, got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
 
+    @pytest.mark.parametrize("periodic", [False, (True, False), (False, True)])
+    def test_FIF_ND_C1_zero_non_periodic_zero_mean(self, periodic):
+        """FIF_ND(C1=0, periodic!=True) must return zero-mean output (fBm normalization contract)."""
+        size = (64, 128)
+        result = FIF_ND(size, alpha=1.8, C1=0, H=0.3, periodic=periodic)
+        assert result.shape == size
+        assert abs(np.mean(result)) < 0.5, f"Mean too large: {np.mean(result):.3f} (expected ~0)"
+
+    def test_FIF_ND_C1_zero_levy_noise_raises(self):
+        """Passing levy_noise with C1=0 must raise, not silently ignore."""
+        noise = np.random.randn(128, 128)
+        with pytest.raises(ValueError, match="levy_noise"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, levy_noise=noise)
+
     @pytest.mark.parametrize("periodic", [
         True,
         False,

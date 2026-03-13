@@ -526,10 +526,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
 
     # C1==0 shortcut: use fBm (no intermittency)
     if C1 == 0:
-        fbm = fBm_ND_circulant(sim_size, H, periodic=True)
-        # Extract output based on per-axis periodicity
-        output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
-        return fbm[output_slices]
+        if levy_noise is not None:
+            raise ValueError('levy_noise argument not supported for C1=0 (fBm shortcut)')
+        return fBm_ND_circulant(output_size, H, periodic=periodic_tuple)
 
     if outer_scale is None:
         outer_scale = max(sim_size)
@@ -602,10 +601,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     del scaled
 
     if H == 0:
-        # Normalize and extract output based on per-axis periodicity
-        flux = flux / B.mean(flux)
         output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
-        return flux[output_slices]
+        flux = flux[output_slices]
+        return flux / B.mean(flux)
 
     # Create H kernel (kernel 2)
     # Calculate exponent and normalization parameters for N-D H kernel
@@ -629,9 +627,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Perform second convolution
     observable = periodic_convolve_nd(flux, kernel2)
 
-    # Normalize by mean
-    observable = observable / B.mean(observable)
-
-    # Extract output based on per-axis periodicity
+    # Extract output based on per-axis periodicity, then normalize by mean of returned portion
     output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
-    return observable[output_slices]
+    observable = observable[output_slices]
+    observable = observable / B.mean(observable)
+    return observable

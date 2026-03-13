@@ -140,7 +140,7 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
             min_sep = 4
     
     # Calculate structure function
-    lags, sf_values = structure_function_analysis(data, order=1, max_sep=max_sep, 
+    lags, sf_values = structure_function_analysis(data, order=1, max_sep=max_sep,
                                                  axis=axis, lags='powers of 1.2')
     
     # Use common Hurst estimation utility

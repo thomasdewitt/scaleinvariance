@@ -157,6 +157,34 @@ python examples/fif_comparison_demo.py
 
 Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
+## Testing
+
+Tests are organised into three directories under `tests/`:
+
+| Directory | Purpose | Speed |
+|-----------|---------|-------|
+| `tests/functional/` | Sanity checks and gross-accuracy tests. Should always pass. | Fast |
+| `tests/numerical/` | Theory-validation tests against known scaling laws. Some may not pass due to finite-size or discretization effects. | Slow |
+| `tests/visual/` | Scripts that generate plots for manual inspection. Run directly with `python`. | — |
+
+Run the functional suite (recommended for CI / quick checks):
+
+```bash
+pytest tests/functional/
+```
+
+Run the full automated suite:
+
+```bash
+pytest tests/functional/ tests/numerical/
+```
+
+Run a specific visual test:
+
+```bash
+python tests/visual/test_1D_fif_structure_function.py 0.3 0.1 1.8
+```
+
 ## Requirements
 
 - Python ≥ 3.8

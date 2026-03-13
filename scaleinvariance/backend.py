@@ -178,11 +178,12 @@ def irfft2(x, s):
 
 def irfftn(x, s):
     """N-D inverse real FFT."""
+    axes = list(range(-len(s), 0))
     if _backend == 'numpy':
-        return np.fft.irfftn(x, s=s)
+        return np.fft.irfftn(x, s=s, axes=axes)
     else:
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
-        result = torch.fft.irfftn(x_torch, s=s)
+        result = torch.fft.irfftn(x_torch, s=s, dim=axes)
         return result.numpy()
 
 
