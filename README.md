@@ -6,6 +6,8 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 
 [Documentation](https://scaleinvariance.readthedocs.io/en/latest/index.html)
 
+View example simulation output in the [Multifractal Explorer](https://thomasddewitt.com/visuals/multifractal/index.html)
+
 ## Current Features
 
 ### Analysis
@@ -28,8 +30,6 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 
 For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
 FIF methods now require explicit `kernel_construction_method_flux=` and `kernel_construction_method_observable=` arguments if you want to override the defaults; the old combined `kernel_construction_method=` shortcut has been removed. Naive FIF kernels are deprecated because their outputs are not remotely accurate.
-
-[View example simulation outputs here](https://thomasdewitt.chpc.utah.edu/fif-simulation/index.html)
 
 #### Agent Skill (Highly Recommended for Agents)
 
