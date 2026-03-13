@@ -118,8 +118,8 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
     min_sep : int, optional
         Minimum separation/lag to include in the fit.
     max_sep : int, optional
-        Maximum separation/lag to include in the fit. If None, defaults to array_size/8
-        or array_size if array_size < 128 (with warning).
+        Maximum separation/lag to include in the fit. Defaults to array_size - 1
+        (a warning is emitted for small arrays).
     axis : int, optional
         Axis along which to compute the Haar fluctuation (default: 0).
     return_fit : bool, optional
@@ -151,7 +151,7 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
     if array_size < 16:
         raise ValueError(f"Array size along axis {axis} is {array_size}, but minimum 16 points required for Hurst estimation")
     
-    # Set default separations to isolate scaling range >> grid size and << domain size
+    # Set default separations
     if max_sep is None:
         if array_size <= 512:
             max_sep = array_size - 1

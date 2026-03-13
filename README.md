@@ -161,22 +161,16 @@ Data source for LGMR: https://www.ncei.noaa.gov/access/paleo-search/study/33112
 
 Tests are organised into three directories under `tests/`:
 
-| Directory | Purpose | Speed |
-|-----------|---------|-------|
-| `tests/functional/` | Sanity checks and gross-accuracy tests. Should always pass. | Fast |
-| `tests/numerical/` | Theory-validation tests against known scaling laws. Some may not pass due to finite-size or discretization effects. | Slow |
-| `tests/visual/` | Scripts that generate plots for manual inspection. Run directly with `python`. | — |
+| Directory           | Purpose                                                                                                                     | How to run                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `tests/functional/` | Sanity checks and gross-accuracy tests. Should always pass.                                                                 | `pytest`                             |
+| `tests/numerical/`  | Theory-validation scripts run directly as Python programs. Some produce failures due to finite-size/discretization effects. | `python tests/numerical/<script>.py` |
+| `tests/visual/`     | Scripts that generate plots for manual inspection.                                                                          | `python tests/visual/<script>.py`    |
 
-Run the functional suite (recommended for CI / quick checks):
-
-```bash
-pytest tests/functional/
-```
-
-Run the full automated suite:
+Run the functional suite:
 
 ```bash
-pytest tests/functional/ tests/numerical/
+pytest
 ```
 
 Run a specific visual test:
