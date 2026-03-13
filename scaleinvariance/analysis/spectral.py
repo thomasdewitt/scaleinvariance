@@ -30,10 +30,14 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
     data = np.asarray(data)
     if data.size == 0:
         raise ValueError("Input data must not be empty")
+    if axis >= data.ndim or axis < -data.ndim:
+        raise ValueError(f"axis {axis} is out of bounds for array with {data.ndim} dimensions")
     if max_wavelength is not None and max_wavelength <= 0:
         raise ValueError("max_wavelength must be positive")
     if min_wavelength is not None and min_wavelength <= 0:
         raise ValueError("min_wavelength must be positive")
+    if min_wavelength is not None and max_wavelength is not None and min_wavelength >= max_wavelength:
+        raise ValueError(f"min_wavelength ({min_wavelength}) must be less than max_wavelength ({max_wavelength})")
         
     n = data.shape[axis]
     # Compute the one-sided FFT and corresponding power spectral density along specified axis

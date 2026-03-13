@@ -26,6 +26,8 @@ def K(q, C1, alpha):
     float
         K(q) value.
     """
+    if np.any(np.asarray(alpha) == 1):
+        raise ValueError("alpha=1 is singular in K(q); use alpha != 1")
     return (C1 / (alpha - 1)) * (q**alpha - q)
 
 
@@ -116,12 +118,12 @@ def compute_K_q_function(data, q_values=None, scaling_method='structure_function
         zeta_model = lambda q, H, C1, alpha: q * H - K(q, C1, alpha)
         popt, _ = curve_fit(zeta_model, q_values, zeta_empirical,
                             p0=[H_est, 0.1, 1.8],
-                            bounds=([H_est - 0.5, 0.0, 0.5], [H_est + 0.5, 1.0, 2.0]),
+                            bounds=([H_est - 0.5, 0.0, 1.01], [H_est + 0.5, 1.0, 2.0]),
                             max_nfev=10000)
         H_fit, C1_fit, alpha_fit = popt
     elif hurst_fit_method == 'fixed':
         popt, _ = curve_fit(K, q_values, K_empirical, p0=[0.1, 1.8],
-                            bounds=([0.0, 0.5], [1.0, 2.0]), max_nfev=10000)
+                            bounds=([0.0, 1.01], [1.0, 2.0]), max_nfev=10000)
         C1_fit, alpha_fit = popt
         H_fit = H_est
     else:
@@ -170,6 +172,9 @@ def two_point_intermittency_exponent(data, order=2, assumed_alpha=2.0, scaling_m
         not be taken too seriously. The true uncertainty is likely larger due
         finite sample effects (convergence is very slow)
     """
+    if assumed_alpha == 1:
+        raise ValueError("assumed_alpha=1 is singular in two_point_intermittency_exponent")
+
     # Select analysis function
     if scaling_method == 'structure_function':
         analysis_func = structure_function_analysis
@@ -191,7 +196,9 @@ def two_point_intermittency_exponent(data, order=2, assumed_alpha=2.0, scaling_m
     # Error propagation for K(q)
     sigma_Kq = np.sqrt((order * sigma_1)**2 + sigma_q**2)
 
-    # Calculate C1
+    # Calculate C1 (K(1) = 0 by definition, so order=1 gives C1=0)
+    if order == 1:
+        return 0.0, 0.0
     denominator = order**assumed_alpha - order
     C1 = (assumed_alpha - 1) * Kq / denominator
 

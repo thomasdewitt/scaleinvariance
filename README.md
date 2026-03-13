@@ -124,7 +124,7 @@ python tests/visual/test_acausal_fBm_hurst_estimation.py 0.7
 python tests/visual/test_2d_fbm.py 0.7
 ```
 
-FIF validation scripts, which test scaling over multiple ranges of scale, live in `tests/automated/` (see `test_1D_FIF_hurst.py` and `test_2D_FIF_hurst.py`). They are designed to be run as standalone Python programs, not via `pytest`, and they generate many large FIF realizations to reach statistical convergence. These scripts are also known to produce some failures, especially near grid scales, because finite-size effects are not fully mitigated by the LS2010 corrections.
+FIF validation scripts, which test scaling over multiple ranges of scale, live in `tests/numerical/` (see `test_1D_FIF_hurst.py`, `test_2D_FIF_hurst.py`, and `test_1D_FIF_Kq.py`). They are designed to be run as standalone Python programs, not via `pytest`, and they generate many large FIF realizations to reach statistical convergence. These scripts are also known to produce some failures, especially near grid scales, because finite-size effects are not fully mitigated by the LS2010 corrections.
 
 ## Kernel Selection
 
