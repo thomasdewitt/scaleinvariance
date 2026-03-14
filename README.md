@@ -29,7 +29,13 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
 
 For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
-FIF methods now require explicit `kernel_construction_method_flux=` and `kernel_construction_method_observable=` arguments if you want to override the defaults; the old combined `kernel_construction_method=` shortcut has been removed. Naive FIF kernels are deprecated because their outputs are not remotely accurate.
+The kernel construction method 'LS2010_spectral' is currently recommended for the most accurate outputs, though 'LS2010' (proposed by Lovejoy & Schertzer 2010) can also be superior in some instances.
+
+## Installation
+
+```bash
+pip install scaleinvariance
+```
 
 #### Agent Skill (Highly Recommended for Agents)
 
@@ -47,11 +53,6 @@ mkdir -p ~/.codex/skills/scaleinvariance
 cp .claude/skills/scaleinvariance/SKILL.md ~/.codex/skills/scaleinvariance/
 ```
 
-## Installation
-
-```bash
-pip install scaleinvariance
-```
 
 ## Performance
 
@@ -114,18 +115,6 @@ H_est, H_err = haar_fluctuation_hurst(fBm_1d)
 print(f"Estimated H = {H_est:.3f} ± {H_err:.3f}")
 ```
 
-## Testing
-
-```bash
-# Test 1D fBm generation and Hurst estimation
-python tests/visual/test_acausal_fBm_hurst_estimation.py 0.7
-
-# Test 2D fBm with isotropy validation
-python tests/visual/test_2d_fbm.py 0.7
-```
-
-FIF validation scripts, which test scaling over multiple ranges of scale, live in `tests/numerical/` (see `test_1D_FIF_hurst.py`, `test_2D_FIF_hurst.py`, and `test_1D_FIF_Kq.py`). They are designed to be run as standalone Python programs, not via `pytest`, and they generate many large FIF realizations to reach statistical convergence. These scripts are also known to produce some failures, especially near grid scales, because finite-size effects are not fully mitigated by the LS2010 corrections.
-
 ## Kernel Selection
 
 For FIF simulations:
@@ -138,16 +127,12 @@ For FIF simulations:
 
 For fBm:
 
-- `fBm_1D()` still uses the single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
-- `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal runs.
-- `fBm_ND_circulant()` is already spectral by construction and does not take a kernel selector.
+- `fBm_ND_circulant()` is recommended. It uses a spectral synthesis method and produces essentially perfectly scale invariant fields.
+- `fBm_1D()` is included for comparsion or for causal simulations.
 
 ## Examples
 
-See the `examples/` directory for comprehensive demonstrations:
-
-- **`fif_comparison_demo.py`**: Compare Hurst estimation methods on multifractal FIF simulations with different intermittency parameters
-- **`multi_dataset_haar_analysis.py`**: Real-world data analysis using Haar fluctuation method
+Work in progress. See [Multifractal Explorer](https://thomasddewitt.com/visuals/multifractal/index.html) for visuals.
 
 Run examples:
 
@@ -166,6 +151,9 @@ Tests are organised into three directories under `tests/`:
 | `tests/functional/` | Sanity checks and gross-accuracy tests. Should always pass.                                                                 | `pytest`                             |
 | `tests/numerical/`  | Theory-validation scripts run directly as Python programs. Some produce failures due to finite-size/discretization effects. | `python tests/numerical/<script>.py` |
 | `tests/visual/`     | Scripts that generate plots for manual inspection.                                                                          | `python tests/visual/<script>.py`    |
+
+
+FIF validation scripts, which test scaling over multiple ranges of scale, live in `tests/numerical/`. They are designed to be run as standalone Python programs, not via `pytest`, and they generate many large FIF realizations to reach statistical convergence. These scripts are also known to produce some failures, especially near grid scales, because finite-size effects are not fully mitigated by the LS2010 corrections or their spectral alternatives.
 
 Run the functional suite:
 
