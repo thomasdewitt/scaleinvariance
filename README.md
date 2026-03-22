@@ -6,7 +6,7 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 
 [Documentation](https://scaleinvariance.readthedocs.io/en/latest/index.html)
 
-View example simulation output in the [Multifractal Explorer](https://thomasddewitt.com/visuals/multifractal/index.html)
+View example FIF simulation output in the [Multifractal Explorer](https://thomasddewitt.com/visuals-and-tools/multifractal/index.html)
 
 ## Current Features
 
