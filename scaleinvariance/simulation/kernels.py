@@ -290,3 +290,75 @@ def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer
     impulse_response = np.real(np.fft.ifftn(response))
     kernel = np.fft.fftshift(impulse_response)
     return kernel.astype(np.float64, copy=False)
+
+
+def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
+                               final_power=None, scaling_dimension=None):
+    """
+    Create an odd (antisymmetric) periodic kernel from a spectral-space power law.
+
+    Like create_kernel_spectral, but the resulting real-space kernel is made odd
+    by negating its left half. The spectral transfer function is multiplied by
+    i*sign(f), producing a purely imaginary spectrum whose inverse FFT is
+    antisymmetric.
+
+    Only valid for 1D, non-causal, periodic filtering.
+
+    Parameters
+    ----------
+    size : int
+        Size of kernel array (1D only).
+    exponent : float
+        Power-law exponent for the base kernel.
+    causal : bool, optional
+        Must be False; causal not supported. Default False.
+    outer_scale : float, optional
+        Large-scale cutoff. If None, defaults to size.
+    outer_scale_width_factor : float, optional
+        Controls transition width for outer scale. Default is 2.0.
+    final_power : float, optional
+        Final power transformation. Default None.
+    scaling_dimension : float, optional
+        Scaling dimension override. Default 1.0 for 1D.
+
+    Returns
+    -------
+    ndarray
+        Odd (antisymmetric) real-space kernel.
+    """
+    if causal:
+        raise ValueError("Spectral odd kernel does not support causal kernels")
+
+    if not isinstance(size, int):
+        raise ValueError("Spectral odd kernel currently only supports 1D (size must be int)")
+
+    if scaling_dimension is None:
+        scaling_dimension = 1.0
+
+    effective_exponent = exponent if final_power is None else exponent * final_power
+    response_exponent = -(float(scaling_dimension) + effective_exponent)
+
+    freqs = np.fft.fftfreq(size, d=1.0)
+    freqs_abs = np.abs(freqs)
+
+    if outer_scale is None:
+        outer_scale = size
+    min_freq = 1.0 / float(outer_scale)
+    freqs_regularized = np.maximum(freqs_abs, min_freq)
+
+    # Even magnitude response (same as standard spectral kernel)
+    magnitude = freqs_regularized ** response_exponent
+    magnitude[0] = magnitude[1]
+
+    # Make odd: multiply by i*sign(f)
+    # This gives a purely imaginary spectrum whose IFFT is real and antisymmetric
+    sign_f = np.sign(freqs)
+    sign_f[0] = 0.0  # DC component is zero for odd function
+    # Nyquist component must also be zero for real odd sequences
+    if size % 2 == 0:
+        sign_f[size // 2] = 0.0
+    response = 1j * sign_f * magnitude
+
+    impulse_response = np.real(np.fft.ifft(response))
+    kernel = np.fft.fftshift(impulse_response)
+    return kernel.astype(np.float64, copy=False)

@@ -12,7 +12,8 @@ Tests that naive and LS2010 kernels:
 import pytest
 import numpy as np
 from scaleinvariance.simulation.kernels import (
-    create_kernel_naive, create_kernel_LS2010, create_kernel_spectral
+    create_kernel_naive, create_kernel_LS2010, create_kernel_spectral,
+    create_kernel_spectral_odd,
 )
 from scaleinvariance.simulation.FIF import periodic_convolve, periodic_convolve_nd
 
@@ -160,6 +161,63 @@ class TestKernelSpectral:
         kernel = create_kernel_spectral(size, exponent=-2.0)
         filtered = periodic_convolve_nd(signal, kernel)
         np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
+
+
+class TestKernelSpectralOdd:
+
+    def test_shape_and_dtype(self):
+        k = create_kernel_spectral_odd(256, -0.3)
+        assert k.shape == (256,)
+        assert k.dtype == np.float64
+        assert not np.any(np.isnan(k))
+
+    def test_rejects_causal(self):
+        with pytest.raises(ValueError):
+            create_kernel_spectral_odd(256, -0.3, causal=True)
+
+    def test_rejects_nd(self):
+        with pytest.raises(ValueError):
+            create_kernel_spectral_odd((32, 32), -0.3)
+
+    def test_antisymmetric(self):
+        """Odd kernel should be antisymmetric: k(mid-j) = -k(mid+j)."""
+        size = 512
+        k = create_kernel_spectral_odd(size, -0.3)
+        mid = size // 2
+        # Compare k[mid+1:] with -k[mid-1:0:-1] (skip center and edge)
+        right = k[mid + 1:]
+        left_reversed = k[mid - 1:0:-1]
+        np.testing.assert_allclose(left_reversed, -right, atol=1e-12)
+
+    def test_zero_mean(self):
+        """Odd kernel should have zero (or near-zero) mean."""
+        k = create_kernel_spectral_odd(512, -0.5)
+        assert abs(np.mean(k)) < 1e-12
+
+    def test_same_magnitude_as_even(self):
+        """Odd kernel FFT magnitude should match even spectral kernel FFT magnitude (skip DC & Nyquist)."""
+        size = 512
+        exponent = -0.3
+        k_even = create_kernel_spectral(size, exponent)
+        k_odd = create_kernel_spectral_odd(size, exponent)
+        # Compare magnitudes in frequency domain (skip DC and Nyquist)
+        fft_even = np.abs(np.fft.fft(k_even))
+        fft_odd = np.abs(np.fft.fft(k_odd))
+        # Skip index 0 (DC) and index size//2 (Nyquist) — both are 0 in odd kernel
+        mask = np.ones(size, dtype=bool)
+        mask[0] = False
+        mask[size // 2] = False
+        np.testing.assert_allclose(fft_even[mask], fft_odd[mask], rtol=1e-10)
+
+    def test_fif_1d_with_spectral_odd(self):
+        """FIF_1D should run without error using spectral_odd observable kernel."""
+        from scaleinvariance import FIF_1D
+        result = FIF_1D(256, alpha=1.8, C1=0.1, H=0.3, causal=False,
+                        kernel_construction_method_observable='spectral_odd',
+                        kernel_construction_method_flux='LS2010')
+        assert result.shape == (256,)
+        assert not np.any(np.isnan(result))
+        assert not np.any(np.isinf(result))
 
 
 class TestKernelConsistency:

@@ -6,6 +6,7 @@ from .kernels import (
     create_kernel_LS2010,
     create_kernel_naive,
     create_kernel_spectral,
+    create_kernel_spectral_odd,
 )
 
 def extremal_levy(alpha, size=1):
@@ -176,6 +177,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
           LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
         - 'spectral': Perfect power law in spectral space
+        - 'spectral_odd': Odd (antisymmetric) spectral kernel — left half negated
     periodic : bool, optional
         If True (default), returns full periodic simulation suitable for periodic
         boundary conditions. If False, doubles simulation size internally then
@@ -342,6 +344,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     elif kernel_construction_method_observable == 'spectral':
         kernel2 = create_kernel_spectral(size, H_exponent, causal=causal, outer_scale=outer_scale,
                                         outer_scale_width_factor=outer_scale_width_factor)
+    elif kernel_construction_method_observable == 'spectral_odd':
+        kernel2 = create_kernel_spectral_odd(size, H_exponent, causal=False, outer_scale=outer_scale,
+                                             outer_scale_width_factor=outer_scale_width_factor)
     else:
         raise ValueError(f"Unknown kernel_construction_method_observable: {kernel_construction_method_observable}")
 
@@ -357,6 +362,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
         observable = B.concatenate([observable, observable[-1:]])
         # Normalize to zero mean (increments should have zero mean)
         observable = observable - B.mean(observable)
+    elif kernel_construction_method_observable == 'spectral_odd':
+        # Odd kernel produces zero-mean output (antisymmetric kernel sums to zero).
+        # Normalize to zero mean and unit variance instead of unit mean.
+        observable = observable - B.mean(observable)
+        observable = observable / B.std(observable)
     else:
         # Normalize to unit mean (levels should have unit mean)
         observable = observable / B.mean(observable)
