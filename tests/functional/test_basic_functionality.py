@@ -190,8 +190,8 @@ class TestFIFSimulations:
             C1=0.1,
             H=0.3,
             periodic=True,
-            kernel_construction_method_flux='LS2010_spectral',
-            kernel_construction_method_observable='LS2010_spectral',
+            kernel_construction_method_flux='spectral',
+            kernel_construction_method_observable='spectral',
         )
 
         assert result.shape == size, f"Expected shape {size}, got {result.shape}"

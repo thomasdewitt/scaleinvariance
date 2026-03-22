@@ -114,7 +114,7 @@ def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_const
         warnings.warn(
             "Naive FIF kernels are deprecated because their outputs are not remotely accurate. "
             "Use kernel_construction_method_flux/kernel_construction_method_observable="
-            "'LS2010' or 'LS2010_spectral' instead.",
+            "'LS2010' or 'spectral' instead.",
             FutureWarning,
             stacklevel=2,
         )
@@ -167,16 +167,15 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'LS2010_spectral': spectral-response kernel for non-causal periodic runs,
+        - 'spectral': spectral-response kernel for non-causal periodic runs,
           LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'LS2010_spectral': spectral-response kernel for non-causal periodic runs,
+        - 'spectral': spectral-response kernel for non-causal periodic runs,
           LS2010 fallback for causal runs
         - 'naive': Simple power-law kernels without corrections
-        - 'spectral': Perfect power law in spectral space
         - 'spectral_odd': Odd (antisymmetric) spectral kernel — left half negated
     periodic : bool, optional
         If True (default), returns full periodic simulation suitable for periodic
@@ -280,7 +279,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
                                       causal=causal, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
-    elif kernel_construction_method_flux == 'LS2010_spectral':
+    elif kernel_construction_method_flux == 'spectral':
         if causal:
             kernel1 = create_kernel_LS2010(size, flux_exponent, flux_norm_ratio_exp,
                                           causal=causal, outer_scale=outer_scale,
@@ -328,7 +327,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
                                       causal=causal, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None)
-    elif kernel_construction_method_observable == 'LS2010_spectral':
+    elif kernel_construction_method_observable == 'spectral':
         if causal:
             kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
                                           causal=causal, outer_scale=outer_scale,
@@ -341,9 +340,6 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     elif kernel_construction_method_observable == 'naive':
         kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)
-    elif kernel_construction_method_observable == 'spectral':
-        kernel2 = create_kernel_spectral(size, H_exponent, causal=causal, outer_scale=outer_scale,
-                                        outer_scale_width_factor=outer_scale_width_factor)
     elif kernel_construction_method_observable == 'spectral_odd':
         kernel2 = create_kernel_spectral_odd(size, H_exponent, causal=False, outer_scale=outer_scale,
                                              outer_scale_width_factor=outer_scale_width_factor)
@@ -414,12 +410,11 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'LS2010_spectral': exact isotropic spectral-response kernel for periodic N-D runs
+        - 'spectral': exact isotropic spectral-response kernel for periodic N-D runs
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'LS2010_spectral': exact isotropic spectral-response kernel for periodic N-D runs
-        - 'spectral': exact isotropic spectral-response kernel
+        - 'spectral': exact isotropic spectral-response kernel for periodic N-D runs
     periodic : bool or tuple of bool, optional
         Controls periodicity behavior for each axis.
         - If bool: applies same periodicity to all axes (default False)
@@ -591,7 +586,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power, scale_metric=scale_metric)
-    elif kernel_construction_method_flux == 'LS2010_spectral':
+    elif kernel_construction_method_flux == 'spectral':
         if scale_metric is not None:
             raise ValueError("Spectral N-D kernels do not support custom scale_metric")
         kernel1 = create_kernel_spectral(sim_size, flux_exponent, causal=False, outer_scale=outer_scale,
@@ -625,7 +620,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       causal=False, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None, scale_metric=scale_metric)
-    elif kernel_construction_method_observable in ('LS2010_spectral', 'spectral'):
+    elif kernel_construction_method_observable == 'spectral':
         if scale_metric is not None:
             raise ValueError("Spectral N-D kernels do not support custom scale_metric")
         kernel2 = create_kernel_spectral(sim_size, H_exponent, causal=False, outer_scale=outer_scale,

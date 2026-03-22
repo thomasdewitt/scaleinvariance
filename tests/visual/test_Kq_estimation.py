@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import scaleinvariance
 
 # ---- Configuration ----
-KERNEL_METHOD  = 'LS2010_spectral'
+KERNEL_METHOD  = 'spectral'
 FIT_MIN        = 10
 FIT_MAX        = 10000
 SIM_SIZE       = 2**16

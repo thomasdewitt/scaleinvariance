@@ -56,14 +56,14 @@ class TestHurstFBmCirculant:
 class TestHurstFIF:
 
     @pytest.mark.parametrize("H_true", [0.3, 0.7])
-    @pytest.mark.parametrize("kernel", ['LS2010', 'LS2010_spectral'])
+    @pytest.mark.parametrize("kernel", ['LS2010', 'spectral'])
     def test_structure_function_hurst(self, H_true, kernel):
         data = make_fif(H_true, C1=0.05, alpha=1.8, kernel=kernel)
         H_est, _ = scaleinvariance.structure_function_hurst(data, axis=1)
         assert abs(H_est - H_true) < 0.2, f"H_est={H_est:.3f}, H_true={H_true}, kernel={kernel}"
 
     @pytest.mark.parametrize("H_true", [0.3, 0.7])
-    @pytest.mark.parametrize("kernel", ['LS2010', 'LS2010_spectral'])
+    @pytest.mark.parametrize("kernel", ['LS2010', 'spectral'])
     def test_haar_fluctuation_hurst(self, H_true, kernel):
         data = make_fif(H_true, C1=0.05, alpha=1.8, kernel=kernel)
         H_est, _ = scaleinvariance.haar_fluctuation_hurst(data, axis=1)
@@ -83,7 +83,7 @@ class TestHurstFIF:
 class TestIntermittencyGrossAccuracy:
 
     @pytest.mark.parametrize("C1_true", [0.05, 0.15])
-    @pytest.mark.parametrize("kernel", ['LS2010', 'LS2010_spectral'])
+    @pytest.mark.parametrize("kernel", ['LS2010', 'spectral'])
     def test_two_point_intermittency_exponent(self, C1_true, kernel):
         data = make_fif(H=0.5, C1=C1_true, alpha=1.8, kernel=kernel)
         C1_est, _ = scaleinvariance.two_point_intermittency_exponent(data, axis=1)

@@ -190,8 +190,8 @@ scaleinvariance.FIF_1D(
     causal=True,               # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
-    kernel_construction_method_flux='LS2010',        # 'LS2010', 'LS2010_spectral', or 'naive'
-    kernel_construction_method_observable='LS2010',  # 'LS2010', 'LS2010_spectral', 'naive', or 'spectral'
+    kernel_construction_method_flux='LS2010',        # 'LS2010', 'spectral', or 'naive'
+    kernel_construction_method_observable='LS2010',  # 'LS2010', 'spectral', 'naive', or 'spectral_odd'
     periodic=True              # Full periodic output; set False to double internally and crop
 ) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0)
 ```
@@ -206,8 +206,8 @@ scaleinvariance.FIF_ND(
     levy_noise=None,           # Pre-generated noise for reproducibility
     outer_scale=None,          # Large-scale cutoff (default: max(size))
     outer_scale_width_factor=2.0,  # Transition width control
-    kernel_construction_method_flux='LS2010',        # 'LS2010' or 'LS2010_spectral'
-    kernel_construction_method_observable='LS2010',  # 'LS2010', 'LS2010_spectral', or 'spectral'
+    kernel_construction_method_flux='LS2010',        # 'LS2010' or 'spectral'
+    kernel_construction_method_observable='LS2010',  # 'LS2010' or 'spectral'
     periodic=False,            # Bool or tuple of bool for per-axis periodicity
     scale_metric=None,         # Custom GSI distance metric
     scale_metric_dim=None      # Scaling dimension (default: spatial dimension)
@@ -250,7 +250,9 @@ scaleinvariance.fBm_1D(
 ## Kernel Selection
 
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
-- Recommended FIF kernels are `'LS2010'` and `'LS2010_spectral'`.
+- Recommended FIF kernels are `'LS2010'` and `'spectral'`.
+- `'spectral'` flux/observable: exact spectral-response kernel for non-causal periodic runs; falls back to LS2010 for causal runs (1D only).
+- `'spectral_odd'` observable (1D only): odd (antisymmetric) spectral kernel — left half negated. Produces zero-mean output; useful for studying antisymmetric contributions.
 - `naive` FIF kernels remain available only for 1D comparison/debugging and emit a warning because their outputs are not remotely accurate.
 - `fBm_1D` still uses a single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
 - `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal periodic runs.

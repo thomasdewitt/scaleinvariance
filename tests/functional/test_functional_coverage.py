@@ -53,7 +53,7 @@ class TestFIF1D:
         fif = scaleinvariance.FIF_1D(SIZE, 1.8, 0.1, H=0.5, periodic=False)
         assert fif.shape == (SIZE,)
 
-    @pytest.mark.parametrize("kernel", ['LS2010', 'LS2010_spectral'])
+    @pytest.mark.parametrize("kernel", ['LS2010', 'spectral'])
     def test_kernel_methods_no_nan(self, kernel):
         fif = scaleinvariance.FIF_1D(SIZE, 1.8, 0.1, H=0.5,
                                      kernel_construction_method_flux=kernel,

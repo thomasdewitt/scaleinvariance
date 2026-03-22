@@ -19,8 +19,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scaleinvariance
 
-KERNEL_METHOD_FLUX = 'LS2010_spectral'
-KERNEL_METHOD_OBSERVABLE = 'LS2010_spectral'
+KERNEL_METHOD_FLUX = 'spectral'
+KERNEL_METHOD_OBSERVABLE = 'spectral'
 
 def K(q, alpha, C1):
     """Scaling function from multifractal theory"""
