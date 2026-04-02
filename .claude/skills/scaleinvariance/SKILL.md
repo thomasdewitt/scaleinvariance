@@ -3,7 +3,7 @@ name: scaleinvariance
 description: Use when working with scaleinvariance package for multifractal field simulation and analysis - Hurst exponent estimation, fractional Brownian motion (fBm), fractionally integrated flux (multiplicative cascades) (FIF), intermittency analysis, and Generalized Scale Invariance (GSI). Also use for scaling analysis of time series, turbulence data, atmospheric fields, or any task involving self-similar, cascade, or multifractal processes or fields.
 ---
 
-# scaleinvariance Package Reference
+# scaleinvariance Package Reference (v0.8.1)
 
 Simulation and analysis tools for **multifractal fields and time series**.
 
