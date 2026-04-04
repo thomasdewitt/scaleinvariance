@@ -121,7 +121,8 @@ For FIF simulations:
 
 - `kernel_construction_method_flux` controls the cascade kernel.
 - `kernel_construction_method_observable` controls the final observable kernel.
-- Only `'LS2010'` is supported for flux kernels. Observable kernels support `'LS2010'`, `'spectral'`, and `'spectral_odd'`.
+- Flux kernels support `'LS2010'` (and deprecated `'naive'` for 1D only).
+- Observable kernels support `'spectral'` (default) and `'LS2010'`. `FIF_1D` also supports `'spectral_odd'` and deprecated `'naive'`.
 - The old `kernel_construction_method=` argument is no longer accepted by `FIF_1D` or `FIF_ND`.
 - `naive` FIF kernels remain available only for comparison and debugging and emit a warning because they are not remotely accurate.
 

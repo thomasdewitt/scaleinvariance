@@ -18,7 +18,8 @@ import matplotlib.pyplot as plt
 import scaleinvariance
 
 # ---- Configuration ----
-KERNEL_METHOD  = 'spectral'
+KERNEL_METHOD_FLUX = 'LS2010'
+KERNEL_METHOD_OBS  = 'spectral'
 FIT_MIN        = 10
 FIT_MAX        = 10000
 SIM_SIZE       = 2**16
@@ -34,7 +35,7 @@ print("=" * 55)
 print("K(q) ESTIMATION TEST")
 print("=" * 55)
 print(f"\nParameters: H={H}, C1={C1}, alpha={alpha}")
-print(f"Config: {N_SIMS} sims, size={SIM_SIZE}, fit=[{FIT_MIN},{FIT_MAX}], kernel={KERNEL_METHOD}, scaling={SCALING_METHOD}")
+print(f"Config: {N_SIMS} sims, size={SIM_SIZE}, fit=[{FIT_MIN},{FIT_MAX}], flux={KERNEL_METHOD_FLUX}, obs={KERNEL_METHOD_OBS}, scaling={SCALING_METHOD}")
 print(f'Using backend "{scaleinvariance.get_backend()}"')
 
 # ---- Generate simulations ----
@@ -45,8 +46,8 @@ for i in range(N_SIMS):
         print(f"  Simulation {i+1}/{N_SIMS}...")
     all_sims.append(scaleinvariance.FIF_1D(
         SIM_SIZE, alpha, C1, H=H,
-        kernel_construction_method_flux=KERNEL_METHOD,
-        kernel_construction_method_observable=KERNEL_METHOD,
+        kernel_construction_method_flux=KERNEL_METHOD_FLUX,
+        kernel_construction_method_observable=KERNEL_METHOD_OBS,
     ))
 sims = np.vstack(all_sims)  # shape: (N_SIMS, SIM_SIZE)
 

@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.9.0**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.9.1**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -254,7 +254,7 @@ scaleinvariance.fBm_1D(
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
 - Flux kernels only support `'LS2010'` (and deprecated `'naive'` for 1D).
 - Observable kernels support `'LS2010'`, `'spectral'`, and `'spectral_odd'`.
-- `'spectral'` observable (default): exact Fourier-space power-law transfer function for non-causal periodic runs. Raises if `causal=True` or `scale_metric` is set.
+- `'spectral'` observable (default): exact Fourier-space power-law transfer function. Raises if `causal=True` (1D) or `scale_metric` is set (N-D).
 - `'spectral_odd'` observable (1D only): odd (antisymmetric) Fourier-space transfer function. Produces zero-mean output. Raises if `causal=True`.
 - `naive` FIF kernels remain available only for 1D comparison/debugging and emit a warning because their outputs are not remotely accurate.
 - `fBm_1D` still uses a single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
