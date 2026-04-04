@@ -254,8 +254,8 @@ scaleinvariance.fBm_1D(
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
 - Flux kernels only support `'LS2010'` (and deprecated `'naive'` for 1D).
 - Observable kernels support `'LS2010'`, `'spectral'`, and `'spectral_odd'`.
-- `'spectral'` observable: exact Fourier-space power-law transfer function for non-causal periodic runs; falls back to LS2010 for causal runs (1D only).
-- `'spectral_odd'` observable (1D only): odd (antisymmetric) Fourier-space transfer function. Produces zero-mean output; useful for studying antisymmetric contributions.
+- `'spectral'` observable (default): exact Fourier-space power-law transfer function for non-causal periodic runs. Raises if `causal=True` or `scale_metric` is set.
+- `'spectral_odd'` observable (1D only): odd (antisymmetric) Fourier-space transfer function. Produces zero-mean output. Raises if `causal=True`.
 - `naive` FIF kernels remain available only for 1D comparison/debugging and emit a warning because their outputs are not remotely accurate.
 - `fBm_1D` still uses a single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
 - `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal periodic runs.

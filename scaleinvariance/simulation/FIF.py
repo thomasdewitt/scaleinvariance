@@ -165,7 +165,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     levy_noise : torch.Tensor, optional
         Pre-generated Lévy noise for reproducibility. Must have same size as simulation.
     causal : bool, optional
-        Use causal kernels (future doesn't affect past). Default True.
+        Use causal kernels (future doesn't affect past). Default False.
         False gives symmetric (non-causal) kernels.
     outer_scale : int, optional
         Large-scale cutoff. Defaults to size.
@@ -178,11 +178,10 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         - 'naive': Simple power-law kernels without corrections
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
-        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'spectral': spectral-response kernel for non-causal periodic runs,
-          LS2010 fallback for causal runs
+        - 'spectral': Fourier-space power-law transfer function (default, non-causal only)
+        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections
         - 'naive': Simple power-law kernels without corrections
-        - 'spectral_odd': Odd (antisymmetric) spectral kernel
+        - 'spectral_odd': Odd (antisymmetric) spectral kernel (non-causal only)
     periodic : bool, optional
         If True (default), returns full periodic simulation suitable for periodic
         boundary conditions. If False, doubles simulation size internally then
@@ -337,6 +336,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)
     elif kernel_construction_method_observable == 'spectral_odd':
+        if causal:
+            raise ValueError("Spectral odd observable kernels do not support causal mode. "
+                             "Use kernel_construction_method_observable='LS2010' with causal=True.")
         kernel2 = create_kernel_spectral_odd(size, H_exponent, causal=False, outer_scale=outer_scale,
                                              outer_scale_width_factor=outer_scale_width_factor)
         kernel2_is_fourier = True
@@ -409,8 +411,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
     kernel_construction_method_observable : str, optional
         Method for constructing observable (H) kernel. Options:
-        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
-        - 'spectral': exact isotropic spectral-response kernel for periodic N-D runs
+        - 'spectral': Fourier-space power-law transfer function (default, requires no scale_metric)
+        - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections
     periodic : bool or tuple of bool, optional
         Controls periodicity behavior for each axis.
         - If bool: applies same periodicity to all axes (default False)

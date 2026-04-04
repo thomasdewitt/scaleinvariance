@@ -21,7 +21,9 @@ def test_fif_non_nan_parameter_sweep():
             for H in H_1d:
                 for causal in causal_1d:
                     for _ in range(n_loop):
-                        result = FIF_1D(size_1d, alpha, C1, H, causal=causal, periodic=True)
+                        obs = 'LS2010' if causal else 'spectral'
+                        result = FIF_1D(size_1d, alpha, C1, H, causal=causal, periodic=True,
+                                        kernel_construction_method_observable=obs)
                         assert not np.any(np.isnan(result)), (
                             f"NaN in FIF_1D(alpha={alpha}, C1={C1}, H={H}, causal={causal})"
                         )
