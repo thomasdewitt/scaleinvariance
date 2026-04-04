@@ -129,9 +129,9 @@ def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_const
 
 # FIF
 
-def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
+def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
            outer_scale_width_factor=2.0, kernel_construction_method_flux='LS2010',
-           kernel_construction_method_observable='LS2010', periodic=True):
+           kernel_construction_method_observable='spectral', periodic=True):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -327,15 +327,12 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
                                       final_power=None)
     elif kernel_construction_method_observable == 'spectral':
         if causal:
-            kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
-                                          causal=causal, outer_scale=outer_scale,
-                                          outer_scale_width_factor=outer_scale_width_factor,
-                                          final_power=None)
-        else:
-            kernel2 = create_kernel_spectral(size, H_exponent, causal=False, outer_scale=outer_scale,
-                                            outer_scale_width_factor=outer_scale_width_factor,
-                                            final_power=None)
-            kernel2_is_fourier = True
+            raise ValueError("Spectral observable kernels do not support causal mode. "
+                             "Use kernel_construction_method_observable='LS2010' with causal=True.")
+        kernel2 = create_kernel_spectral(size, H_exponent, causal=False, outer_scale=outer_scale,
+                                        outer_scale_width_factor=outer_scale_width_factor,
+                                        final_power=None)
+        kernel2_is_fourier = True
     elif kernel_construction_method_observable == 'naive':
         kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)
@@ -370,7 +367,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=True, outer_scale=None,
     return observable
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
-           kernel_construction_method_flux='LS2010', kernel_construction_method_observable='LS2010',
+           kernel_construction_method_flux='LS2010', kernel_construction_method_observable='spectral',
            periodic=False, scale_metric=None, scale_metric_dim=None):
     """
     Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
@@ -616,7 +613,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       final_power=None, scale_metric=scale_metric)
     elif kernel_construction_method_observable == 'spectral':
         if scale_metric is not None:
-            raise ValueError("Spectral N-D kernels do not support custom scale_metric")
+            raise ValueError("Spectral observable kernels do not support custom scale_metric. "
+                             "Use kernel_construction_method_observable='LS2010' with scale_metric.")
         kernel2 = create_kernel_spectral(sim_size, H_exponent, causal=False, outer_scale=outer_scale,
                                         outer_scale_width_factor=outer_scale_width_factor,
                                         final_power=None, scaling_dimension=scale_metric_dim)

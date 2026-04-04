@@ -100,7 +100,9 @@ class TestFIFSimulations:
     def test_FIF_1D_basic(self, alpha, C1, H, causal):
         """Test 1D FIF with various parameter combinations."""
         size = 128
-        result = FIF_1D(size, alpha, C1, H, causal=causal, periodic=True)
+        obs = 'LS2010' if causal else 'spectral'
+        result = FIF_1D(size, alpha, C1, H, causal=causal, periodic=True,
+                        kernel_construction_method_observable=obs)
 
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
@@ -111,7 +113,8 @@ class TestFIFSimulations:
     def test_FIF_1D_periodic(self, periodic):
         """Test 1D FIF with periodic/non-periodic modes."""
         size = 128
-        result = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, causal=True, periodic=periodic)
+        result = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, causal=True, periodic=periodic,
+                        kernel_construction_method_observable='LS2010')
 
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"

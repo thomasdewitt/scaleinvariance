@@ -189,11 +189,11 @@ scaleinvariance.FIF_1D(
                                # C1 = 0 routes to fBm (requires causal=False)
     H,                         # Hurst exponent in (-1, 1)
     levy_noise=None,           # Pre-generated noise for reproducibility
-    causal=True,               # Use causal kernels (must be False for C1=0)
+    causal=False,              # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method_flux='LS2010',        # 'LS2010' or 'naive'
-    kernel_construction_method_observable='LS2010',  # 'LS2010', 'spectral', 'naive', or 'spectral_odd'
+    kernel_construction_method_observable='spectral', # 'spectral', 'LS2010', 'naive', or 'spectral_odd'
     periodic=True              # Full periodic output; set False to double internally and crop
 ) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0)
 ```
@@ -209,7 +209,7 @@ scaleinvariance.FIF_ND(
     outer_scale=None,          # Large-scale cutoff (default: max(size))
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method_flux='LS2010',        # 'LS2010' only
-    kernel_construction_method_observable='LS2010',  # 'LS2010' or 'spectral'
+    kernel_construction_method_observable='spectral', # 'spectral' or 'LS2010'
     periodic=False,            # Bool or tuple of bool for per-axis periodicity
     scale_metric=None,         # Custom GSI distance metric
     scale_metric_dim=None      # Scaling dimension (default: spatial dimension)
