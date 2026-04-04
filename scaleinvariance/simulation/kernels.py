@@ -246,11 +246,11 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
 def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
                            final_power=None, scaling_dimension=None):
     """
-    Create a periodic kernel from an exact spectral-space power law.
+    Create a Fourier-space power-law transfer function for periodic convolution.
 
-    The returned real-space kernel is the impulse response whose circular FFT is
-    the requested power-law transfer function. This is only valid for non-causal
-    periodic filtering.
+    Returns the frequency-domain response directly (no inverse FFT). Pass the
+    result to ``periodic_convolve`` / ``periodic_convolve_nd`` with
+    ``kernel_is_fourier=True``.  Only valid for non-causal periodic filtering.
     """
     if causal:
         raise ValueError("Spectral kernel construction does not support causal kernels")
@@ -287,20 +287,17 @@ def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer
     else:
         response[(0,) * len(shape)] = response[(1,) + (0,) * (len(shape) - 1)]
 
-    impulse_response = np.real(np.fft.ifftn(response))
-    kernel = np.fft.fftshift(impulse_response)
-    return kernel.astype(np.float64, copy=False)
+    return response
 
 
 def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
                                final_power=None, scaling_dimension=None):
     """
-    Create an odd (antisymmetric) periodic kernel from a spectral-space power law.
+    Create an odd (antisymmetric) Fourier-space transfer function from a power law.
 
-    Like create_kernel_spectral, but the resulting real-space kernel is made odd
-    by negating its left half. The spectral transfer function is multiplied by
+    Like create_kernel_spectral, but the transfer function is multiplied by
     i*sign(f), producing a purely imaginary spectrum whose inverse FFT is
-    antisymmetric.
+    real and antisymmetric.
 
     Only valid for 1D, non-causal, periodic filtering.
 
@@ -324,7 +321,8 @@ def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, o
     Returns
     -------
     ndarray
-        Odd (antisymmetric) real-space kernel.
+        Fourier-space transfer function (complex). Pass to ``periodic_convolve``
+        with ``kernel_is_fourier=True``.
     """
     if causal:
         raise ValueError("Spectral odd kernel does not support causal kernels")
@@ -359,6 +357,4 @@ def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, o
         sign_f[size // 2] = 0.0
     response = 1j * sign_f * magnitude
 
-    impulse_response = np.real(np.fft.ifft(response))
-    kernel = np.fft.fftshift(impulse_response)
-    return kernel.astype(np.float64, copy=False)
+    return response

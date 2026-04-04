@@ -93,7 +93,7 @@ def main():
             causal=causal,
             levy_noise=levy_noise,
             kernel_construction_method_observable='spectral',
-            kernel_construction_method_flux='spectral',
+            kernel_construction_method_flux='LS2010',
             outer_scale=outer_scale,
             periodic=True,
         )
@@ -121,7 +121,7 @@ def main():
                 H=H,
                 causal=False,
                 levy_noise=levy_noise,
-                kernel_construction_method_flux='spectral',
+                kernel_construction_method_flux='LS2010',
                 kernel_construction_method_observable='spectral_odd',
                 outer_scale=outer_scale,
                 periodic=True,

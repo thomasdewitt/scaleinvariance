@@ -272,6 +272,7 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
     if H < 0.5:
         # For H in (-0.5, 0.5): convolve with kernel exponent (H + 1/2) - 1 = H - 1/2
         kernel_exponent = H - 0.5
+        kernel_is_fourier = False
 
         if kernel_construction_method == 'LS2010':
             # For LS2010, need to calculate norm_ratio_exponent
@@ -288,10 +289,11 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
             kernel = create_kernel_spectral(size, kernel_exponent, causal=causal,
                                            outer_scale=outer_scale,
                                            outer_scale_width_factor=outer_scale_width_factor)
+            kernel_is_fourier = True
         else:
             raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
-        result = periodic_convolve(noise, kernel)
+        result = periodic_convolve(noise, kernel, kernel_is_fourier=kernel_is_fourier)
 
         # Apply causality normalization if needed
         if causal:
@@ -306,6 +308,7 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
         integrated = B.cumsum(noise, axis=0)
 
         kernel_exponent = H - 1.5
+        kernel_is_fourier = False
 
         if kernel_construction_method == 'LS2010':
             # For LS2010, need to calculate norm_ratio_exponent
@@ -322,10 +325,11 @@ def fBm_1D(size, H, causal=True, outer_scale=None, outer_scale_width_factor=2.0,
             kernel = create_kernel_spectral(size, kernel_exponent, causal=causal,
                                            outer_scale=outer_scale,
                                            outer_scale_width_factor=outer_scale_width_factor)
+            kernel_is_fourier = True
         else:
             raise ValueError(f"Unknown kernel_construction_method: {kernel_construction_method}")
 
-        result = periodic_convolve(integrated, kernel)
+        result = periodic_convolve(integrated, kernel, kernel_is_fourier=kernel_is_fourier)
 
         # Apply causality normalization if needed
         if causal:

@@ -55,10 +55,13 @@ def main():
     # Build kernels
     k_naive = np.array(create_kernel_naive(size, exponent, causal=causal, outer_scale=outer_scale))
     k_ls2010 = np.array(create_kernel_LS2010(size, exponent, norm_ratio_exp, causal=causal, outer_scale=outer_scale))
-    k_spectral = np.array(create_kernel_spectral(size, exponent, causal=False, outer_scale=outer_scale))
+    # Spectral kernels return Fourier-space responses; IFFT to real space for plotting
+    resp_spectral = create_kernel_spectral(size, exponent, causal=False, outer_scale=outer_scale)
+    k_spectral = np.fft.fftshift(np.real(np.fft.ifft(resp_spectral)))
 
     # Odd kernel (non-causal only)
-    k_odd = np.array(create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=outer_scale))
+    resp_odd = create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=outer_scale)
+    k_odd = np.fft.fftshift(np.real(np.fft.ifft(resp_odd)))
 
     # x-axis: centered indices
     x_full = np.arange(size) - size // 2

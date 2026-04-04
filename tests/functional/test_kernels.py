@@ -146,29 +146,27 @@ class TestKernelSpectral:
         size = 512
         signal = np.random.default_rng(0).standard_normal(size)
         kernel = create_kernel_spectral(size, exponent=-1.0)
-        filtered = periodic_convolve(signal, kernel)
+        filtered = periodic_convolve(signal, kernel, kernel_is_fourier=True)
         np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
 
     def test_nd_shape_and_dtype(self):
         kernel = create_kernel_spectral((32, 48), -1.7)
         assert kernel.shape == (32, 48)
-        assert kernel.dtype == np.float64
         assert not np.any(np.isnan(kernel))
 
     def test_nd_identity_for_zero_hurst_kernel(self):
         size = (32, 32)
         signal = np.random.default_rng(0).standard_normal(size)
         kernel = create_kernel_spectral(size, exponent=-2.0)
-        filtered = periodic_convolve_nd(signal, kernel)
+        filtered = periodic_convolve_nd(signal, kernel, kernel_is_fourier=True)
         np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
 
 
 class TestKernelSpectralOdd:
 
-    def test_shape_and_dtype(self):
+    def test_shape(self):
         k = create_kernel_spectral_odd(256, -0.3)
         assert k.shape == (256,)
-        assert k.dtype == np.float64
         assert not np.any(np.isnan(k))
 
     def test_rejects_causal(self):
@@ -179,35 +177,35 @@ class TestKernelSpectralOdd:
         with pytest.raises(ValueError):
             create_kernel_spectral_odd((32, 32), -0.3)
 
-    def test_antisymmetric(self):
-        """Odd kernel should be antisymmetric: k(mid-j) = -k(mid+j)."""
+    def test_antisymmetric_impulse_response(self):
+        """IFFT of odd kernel should be antisymmetric: k(mid-j) = -k(mid+j)."""
         size = 512
-        k = create_kernel_spectral_odd(size, -0.3)
+        response = create_kernel_spectral_odd(size, -0.3)
+        k = np.fft.fftshift(np.real(np.fft.ifft(response)))
         mid = size // 2
-        # Compare k[mid+1:] with -k[mid-1:0:-1] (skip center and edge)
         right = k[mid + 1:]
         left_reversed = k[mid - 1:0:-1]
         np.testing.assert_allclose(left_reversed, -right, atol=1e-12)
 
-    def test_zero_mean(self):
-        """Odd kernel should have zero (or near-zero) mean."""
-        k = create_kernel_spectral_odd(512, -0.5)
-        assert abs(np.mean(k)) < 1e-12
+    def test_zero_dc(self):
+        """Odd kernel should have zero DC component."""
+        response = create_kernel_spectral_odd(512, -0.5)
+        assert abs(response[0]) < 1e-12
 
     def test_same_magnitude_as_even(self):
-        """Odd kernel FFT magnitude should match even spectral kernel FFT magnitude (skip DC & Nyquist)."""
+        """Odd kernel magnitude should match even spectral kernel magnitude (skip DC & Nyquist)."""
         size = 512
         exponent = -0.3
-        k_even = create_kernel_spectral(size, exponent)
-        k_odd = create_kernel_spectral_odd(size, exponent)
-        # Compare magnitudes in frequency domain (skip DC and Nyquist)
-        fft_even = np.abs(np.fft.fft(k_even))
-        fft_odd = np.abs(np.fft.fft(k_odd))
+        resp_even = create_kernel_spectral(size, exponent)
+        resp_odd = create_kernel_spectral_odd(size, exponent)
+        # Compare magnitudes directly (both are already in Fourier space)
+        mag_even = np.abs(resp_even)
+        mag_odd = np.abs(resp_odd)
         # Skip index 0 (DC) and index size//2 (Nyquist) — both are 0 in odd kernel
         mask = np.ones(size, dtype=bool)
         mask[0] = False
         mask[size // 2] = False
-        np.testing.assert_allclose(fft_even[mask], fft_odd[mask], rtol=1e-10)
+        np.testing.assert_allclose(mag_even[mask], mag_odd[mask], rtol=1e-10)
 
     def test_fif_1d_with_spectral_odd(self):
         """FIF_1D should run without error using spectral_odd observable kernel."""

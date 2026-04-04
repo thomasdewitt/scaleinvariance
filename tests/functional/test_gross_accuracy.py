@@ -17,7 +17,7 @@ N_SIMS = 10
 def make_fif(H, C1, alpha, n=N_SIMS, kernel='LS2010'):
     return np.stack([
         scaleinvariance.FIF_1D(SIZE, alpha, C1, H=H,
-                               kernel_construction_method_flux=kernel,
+                               kernel_construction_method_flux='LS2010',
                                kernel_construction_method_observable=kernel)
         for _ in range(n)
     ])

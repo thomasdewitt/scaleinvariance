@@ -105,7 +105,7 @@ def main():
         for i in range(n_sims):
             if i%2 == 0: print(f"  Spectral_odd simulation {i+1}/{n_sims}...",)
             fif_field_odd = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=False,
-                                                   kernel_construction_method_flux='spectral',
+                                                   kernel_construction_method_flux='LS2010',
                                                    kernel_construction_method_observable='spectral_odd',
                                                    outer_scale=outer_scale, periodic=True)
             all_fif_odd_data.append(fif_field_odd)
@@ -121,7 +121,7 @@ def main():
         for i in range(n_sims):
             if i%2 == 0: print(f"  Spectral simulation {i+1}/{n_sims}...",)
             fif_field_spectral = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=False,
-                                                        kernel_construction_method_flux='spectral',
+                                                        kernel_construction_method_flux='LS2010',
                                                         kernel_construction_method_observable='spectral',
                                                         outer_scale=outer_scale, periodic=True)
             all_fif_spectral_data.append(fif_field_spectral)

@@ -114,6 +114,3 @@ dmypy.json
 
 # macOS
 .DS_Store
-
-# Claude instructions (project-specific)
-CLAUDE.md

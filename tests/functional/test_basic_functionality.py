@@ -190,7 +190,7 @@ class TestFIFSimulations:
             C1=0.1,
             H=0.3,
             periodic=True,
-            kernel_construction_method_flux='spectral',
+            kernel_construction_method_flux='LS2010',
             kernel_construction_method_observable='spectral',
         )
 

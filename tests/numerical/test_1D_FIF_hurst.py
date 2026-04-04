@@ -10,7 +10,7 @@ import numpy as np
 from scaleinvariance import FIF_1D, structure_function_hurst, spectral_hurst
 
 # Test configuration
-KERNEL_METHOD_FLUX = 'spectral'
+KERNEL_METHOD_FLUX = 'LS2010'
 KERNEL_METHOD_OBSERVABLE = 'spectral'
 HURST_METHOD = 'spectral'  # 'structure_function' or 'spectral'
 N_REALIZATIONS = 300

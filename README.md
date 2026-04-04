@@ -29,7 +29,7 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
 
 For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
-The kernel construction method 'LS2010_spectral' is currently recommended for the most accurate outputs, though 'LS2010' (proposed by Lovejoy & Schertzer 2010) can also be superior in some instances.
+The kernel construction method `'LS2010'` (Lovejoy & Schertzer 2010) is used for flux kernels. For observable kernels, both `'LS2010'` and `'spectral'` are supported.
 
 ## Installation
 
@@ -100,14 +100,14 @@ fBm_3d = fBm_ND_circulant((256, 256, 128), H=0.7)
 fif = FIF_1D(2**16, alpha=1.8, C1=0.1, H=0.3)
 
 # Override FIF kernels explicitly if needed
-fif_spectral = FIF_1D(
+fif_custom = FIF_1D(
     2**16,
     alpha=1.8,
     C1=0.1,
     H=0.3,
     causal=False,
-    kernel_construction_method_flux='LS2010_spectral',
-    kernel_construction_method_observable='LS2010_spectral',
+    kernel_construction_method_flux='LS2010',
+    kernel_construction_method_observable='spectral',
 )
 
 # Estimate Hurst exponent
@@ -121,7 +121,7 @@ For FIF simulations:
 
 - `kernel_construction_method_flux` controls the cascade kernel.
 - `kernel_construction_method_observable` controls the final observable kernel.
-- Recommended values are `'LS2010'` and `'LS2010_spectral'`.
+- Only `'LS2010'` is supported for flux kernels. Observable kernels support `'LS2010'`, `'spectral'`, and `'spectral_odd'`.
 - The old `kernel_construction_method=` argument is no longer accepted by `FIF_1D` or `FIF_ND`.
 - `naive` FIF kernels remain available only for comparison and debugging and emit a warning because they are not remotely accurate.
 
