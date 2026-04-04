@@ -43,14 +43,14 @@ An agent skill is included in this repository. For Claude Code:
 
 ```bash
 mkdir -p ~/.claude/skills/scaleinvariance
-cp .claude/skills/scaleinvariance/SKILL.md ~/.claude/skills/scaleinvariance/
+cp agent-skills/scaleinvariance/SKILL.md ~/.claude/skills/scaleinvariance/
 ```
 
 Codex:
 
 ```bash
 mkdir -p ~/.codex/skills/scaleinvariance
-cp .claude/skills/scaleinvariance/SKILL.md ~/.codex/skills/scaleinvariance/
+cp agent-skills/scaleinvariance/SKILL.md ~/.codex/skills/scaleinvariance/
 ```
 
 

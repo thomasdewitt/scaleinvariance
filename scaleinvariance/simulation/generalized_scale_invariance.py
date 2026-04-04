@@ -78,7 +78,8 @@ def canonical_scale_metric(size, ls, Hz=5/9):
     >>> sim_size = tuple(s * 2 for s in size)
     >>> metric_doubled = canonical_scale_metric(sim_size, ls, Hz)
     >>> fif = FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
-    ...              scale_metric=metric_doubled, scale_metric_dim=2.5)
+    ...              scale_metric=metric_doubled, scale_metric_dim=2.5,
+    ...              kernel_construction_method_observable='LS2010')
 
     Notes
     -----

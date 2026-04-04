@@ -476,7 +476,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     >>> scale_metric = (X**2 + (Y/2)**2)**0.5  # y-direction scales faster
     >>> # Use non-integer dimension for GSI
     >>> fif = FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
-    ...              scale_metric=scale_metric, scale_metric_dim=2.3)
+    ...              scale_metric=scale_metric, scale_metric_dim=2.3,
+    ...              kernel_construction_method_observable='LS2010')
 
     Notes
     -----

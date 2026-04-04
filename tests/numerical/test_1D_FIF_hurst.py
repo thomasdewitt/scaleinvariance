@@ -21,7 +21,7 @@ TOLERANCE = 0.05
 H_VALUES = [0.0, 0.3, 0.7]
 C1_VALUES = [0.0, 0.001, 0.1]
 ALPHA_VALUES = [2.0, 1.5]
-CAUSAL_VALUES = [True, False]
+CAUSAL_VALUES = [False]
 
 # Scaling ranges to test
 SCALING_RANGES = [

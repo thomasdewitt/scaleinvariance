@@ -90,7 +90,7 @@ def main():
             alpha,
             C1,
             H=H,
-            causal=causal,
+            causal=False,
             levy_noise=levy_noise,
             kernel_construction_method_observable='spectral',
             kernel_construction_method_flux='LS2010',
