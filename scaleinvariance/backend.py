@@ -15,6 +15,13 @@ try:
 except ImportError:
     _torch_available = False
 
+# Try to import pyfftw
+try:
+    import pyfftw
+    _fftw_available = True
+except ImportError:
+    _fftw_available = False
+
 # Global state
 _backend = 'numpy'  # Default backend
 _num_threads = int(os.cpu_count() * 0.9) if os.cpu_count() else 4
@@ -31,28 +38,34 @@ def set_backend(backend='numpy'):
     Parameters
     ----------
     backend : str
-        Backend to use: 'numpy' or 'torch'
+        Backend to use: 'numpy', 'torch', or 'fftw'
 
     Raises
     ------
     ValueError
         If backend is not recognized
     ImportError
-        If torch backend requested but torch not installed
+        If requested backend is not installed
     """
     global _backend
 
-    if backend not in ('numpy', 'torch'):
-        raise ValueError(f"Unknown backend: {backend}. Must be 'numpy' or 'torch'")
+    if backend not in ('numpy', 'torch', 'fftw'):
+        raise ValueError(f"Unknown backend: {backend}. Must be 'numpy', 'torch', or 'fftw'")
 
     if backend == 'torch' and not _torch_available:
         raise ImportError("PyTorch not available. Install with: pip install torch")
+
+    if backend == 'fftw' and not _fftw_available:
+        raise ImportError("pyFFTW not available. Install with: pip install pyfftw")
 
     _backend = backend
 
     # Set threading for the backend
     if _backend == 'torch':
         torch.set_num_threads(_num_threads)
+    elif _backend == 'fftw':
+        pyfftw.config.NUM_THREADS = _num_threads
+        pyfftw.config.PLANNER_EFFORT = 'FFTW_MEASURE'
     else:
         os.environ['OMP_NUM_THREADS'] = str(_num_threads)
         os.environ['MKL_NUM_THREADS'] = str(_num_threads)
@@ -77,6 +90,8 @@ def set_num_threads(n):
 
     if _backend == 'torch':
         torch.set_num_threads(_num_threads)
+    elif _backend == 'fftw':
+        pyfftw.config.NUM_THREADS = _num_threads
     else:
         os.environ['OMP_NUM_THREADS'] = str(_num_threads)
         os.environ['MKL_NUM_THREADS'] = str(_num_threads)
@@ -88,114 +103,142 @@ def set_num_threads(n):
 
 def fftfreq(n, d=1.0):
     """FFT frequency array."""
-    if _backend == 'numpy':
-        return np.fft.fftfreq(n, d=d)
-    else:
+    if _backend == 'torch':
         return torch.fft.fftfreq(n, d=d).numpy()
+    else:
+        return np.fft.fftfreq(n, d=d)
 
 
 def fft(x, axis=-1):
     """1D FFT."""
-    if _backend == 'numpy':
-        return np.fft.fft(x, axis=axis)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.fft(x_torch, axis=axis)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.fft(x, axis=axis, threads=_num_threads,
+                                                planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.fft(x, axis=axis)
 
 
 def ifft(x, axis=-1):
     """1D inverse FFT."""
-    if _backend == 'numpy':
-        return np.fft.ifft(x, axis=axis)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.ifft(x_torch, axis=axis)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.ifft(x, axis=axis, threads=_num_threads,
+                                                 planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.ifft(x, axis=axis)
 
 
 def fft2(x):
     """2D FFT."""
-    if _backend == 'numpy':
-        return np.fft.fft2(x)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.fft2(x_torch)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.fft2(x, threads=_num_threads,
+                                                  planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.fft2(x)
 
 
 def ifft2(x):
     """2D inverse FFT."""
-    if _backend == 'numpy':
-        return np.fft.ifft2(x)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.ifft2(x_torch)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.ifft2(x, threads=_num_threads,
+                                                   planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.ifft2(x)
 
 
 def fftn(x, axes=None):
     """N-D FFT."""
-    if _backend == 'numpy':
-        return np.fft.fftn(x, axes=axes)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         # torch uses 'dim' instead of 'axes'
         result = torch.fft.fftn(x_torch, dim=axes)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.fftn(x, axes=axes, threads=_num_threads,
+                                                  planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.fftn(x, axes=axes)
 
 
 def ifftn(x, axes=None):
     """N-D inverse FFT."""
-    if _backend == 'numpy':
-        return np.fft.ifftn(x, axes=axes)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         # torch uses 'dim' instead of 'axes'
         result = torch.fft.ifftn(x_torch, dim=axes)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.ifftn(x, axes=axes, threads=_num_threads,
+                                                   planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.ifftn(x, axes=axes)
 
 
 def rfft(x, axis=-1):
     """1D real FFT."""
-    if _backend == 'numpy':
-        return np.fft.rfft(x, axis=axis)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.float64)
         result = torch.fft.rfft(x_torch, axis=axis)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.rfft(x, axis=axis, threads=_num_threads,
+                                                  planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.rfft(x, axis=axis)
 
 
 def irfft2(x, s):
     """2D inverse real FFT."""
-    if _backend == 'numpy':
-        return np.fft.irfft2(x, s=s)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.irfft2(x_torch, s=s)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.irfft2(x, s=s, threads=_num_threads,
+                                                    planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.irfft2(x, s=s)
 
 
 def irfftn(x, s):
     """N-D inverse real FFT."""
     axes = list(range(-len(s), 0))
-    if _backend == 'numpy':
-        return np.fft.irfftn(x, s=s, axes=axes)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
         result = torch.fft.irfftn(x_torch, s=s, dim=axes)
         return result.numpy()
+    elif _backend == 'fftw':
+        return pyfftw.interfaces.numpy_fft.irfftn(x, s=s, axes=axes, threads=_num_threads,
+                                                    planner_effort='FFTW_MEASURE')
+    else:
+        return np.fft.irfftn(x, s=s, axes=axes)
 
 
 def ifftshift(x, axes=None):
     """Inverse FFT shift."""
-    if _backend == 'numpy':
-        return np.fft.ifftshift(x, axes=axes)
-    else:
+    if _backend == 'torch':
         x_torch = torch.as_tensor(x)
         # torch uses 'dims' instead of 'axes'
         result = torch.fft.ifftshift(x_torch, dim=axes)
         return result.numpy()
+    else:
+        # numpy ifftshift works for both numpy and fftw backends
+        return np.fft.ifftshift(x, axes=axes)
 
 
 # ============================================================================
@@ -204,20 +247,20 @@ def ifftshift(x, axes=None):
 
 def randn(*shape):
     """Standard normal random numbers."""
-    if _backend == 'numpy':
-        return np.random.randn(*shape)
-    else:
+    if _backend == 'torch':
         result = torch.randn(*shape, dtype=torch.float64)
         return result.numpy()
+    else:
+        return np.random.randn(*shape)
 
 
 def rand(*shape):
     """Uniform random numbers [0, 1)."""
-    if _backend == 'numpy':
-        return np.random.rand(*shape)
-    else:
+    if _backend == 'torch':
         result = torch.rand(*shape, dtype=torch.float64)
         return result.numpy()
+    else:
+        return np.random.rand(*shape)
 
 
 def exponential(scale, size=None):
@@ -236,12 +279,7 @@ def exponential(scale, size=None):
     ndarray
         Exponential random samples
     """
-    if _backend == 'numpy':
-        if size is None:
-            return np.random.exponential(scale)
-        else:
-            return np.random.exponential(scale, size=size)
-    else:
+    if _backend == 'torch':
         if size is None:
             size = 1
         # torch uses 1/scale as parameter, numpy uses scale
@@ -249,6 +287,11 @@ def exponential(scale, size=None):
         dist = torch.distributions.Exponential(rate)
         result = dist.sample(size if isinstance(size, tuple) else (size,))
         return result.numpy()
+    else:
+        if size is None:
+            return np.random.exponential(scale)
+        else:
+            return np.random.exponential(scale, size=size)
 
 
 # ============================================================================
@@ -257,7 +300,7 @@ def exponential(scale, size=None):
 
 def zeros(shape, dtype=np.float64):
     """Create zero array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.zeros(shape, dtype=dtype)
     else:
         # Convert numpy dtype to torch dtype
@@ -280,7 +323,7 @@ def zeros(shape, dtype=np.float64):
 
 def ones(shape, dtype=np.float64):
     """Create ones array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.ones(shape, dtype=dtype)
     else:
         # Convert numpy dtype to torch dtype
@@ -303,7 +346,7 @@ def ones(shape, dtype=np.float64):
 
 def arange(start, stop=None, step=1, dtype=np.float64):
     """Create array with evenly spaced values."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.arange(start, stop, step, dtype=dtype)
     else:
         # Convert numpy dtype to torch dtype
@@ -327,7 +370,7 @@ def arange(start, stop=None, step=1, dtype=np.float64):
 
 def asarray(x, dtype=np.float64):
     """Convert to array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.asarray(x, dtype=dtype)
     else:
         # Convert numpy dtype to torch dtype
@@ -350,7 +393,7 @@ def asarray(x, dtype=np.float64):
 
 def full_like(x, fill_value):
     """Create array with same shape as x, filled with value."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.full_like(x, fill_value)
     else:
         x_torch = torch.as_tensor(x)
@@ -360,7 +403,7 @@ def full_like(x, fill_value):
 
 def concatenate(arrays, axis=0):
     """Concatenate arrays along axis."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.concatenate(arrays, axis=axis)
     else:
         arrays_torch = [torch.as_tensor(a) for a in arrays]
@@ -374,7 +417,7 @@ def concatenate(arrays, axis=0):
 
 def meshgrid(*arrays, indexing='xy'):
     """Create mesh grids."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.meshgrid(*arrays, indexing=indexing)
     else:
         arrays_torch = [torch.as_tensor(a, dtype=torch.float64) for a in arrays]
@@ -384,7 +427,7 @@ def meshgrid(*arrays, indexing='xy'):
 
 def flip(x, axis):
     """Flip array along axis."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.flip(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -394,7 +437,7 @@ def flip(x, axis):
 
 def conj(x):
     """Complex conjugate."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.conj(x)
     else:
         x_torch = torch.as_tensor(x, dtype=torch.complex128)
@@ -405,7 +448,7 @@ def conj(x):
 
 def where(condition, x, y):
     """Element-wise selection."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.where(condition, x, y)
     else:
         # np.asarray ensures we have a true ndarray (not a numpy scalar or
@@ -419,7 +462,7 @@ def where(condition, x, y):
 
 def clip(x, x_min, x_max):
     """Clip values to range."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.clip(x, x_min, x_max)
     else:
         x_torch = torch.as_tensor(x)
@@ -433,7 +476,7 @@ def clip(x, x_min, x_max):
 
 def abs(x):
     """Absolute value."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.abs(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -443,7 +486,7 @@ def abs(x):
 
 def sqrt(x):
     """Square root."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.sqrt(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -453,7 +496,7 @@ def sqrt(x):
 
 def sign(x):
     """Sign of values."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.sign(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -463,7 +506,7 @@ def sign(x):
 
 def exp(x):
     """Exponential function."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.exp(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -473,7 +516,7 @@ def exp(x):
 
 def cos(x):
     """Cosine function."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.cos(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -483,7 +526,7 @@ def cos(x):
 
 def sin(x):
     """Sine function."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.sin(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -497,7 +540,7 @@ def sin(x):
 
 def mean(x, axis=None):
     """Mean of array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.mean(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -510,7 +553,7 @@ def mean(x, axis=None):
 
 def std(x, axis=None):
     """Standard deviation (population, ddof=0 — matches numpy default)."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.std(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -523,7 +566,7 @@ def std(x, axis=None):
 
 def sum(x, axis=None):
     """Sum of array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.sum(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -536,7 +579,7 @@ def sum(x, axis=None):
 
 def cumsum(x, axis=0):
     """Cumulative sum."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.cumsum(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -546,7 +589,7 @@ def cumsum(x, axis=0):
 
 def diff(x, axis=-1):
     """Difference along axis."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.diff(x, axis=axis)
     else:
         x_torch = torch.as_tensor(x)
@@ -570,7 +613,7 @@ pi = np.pi
 
 def real(x):
     """Real part of array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.real(x)
     else:
         x_torch = torch.as_tensor(x)
@@ -580,7 +623,7 @@ def real(x):
 
 def imag(x):
     """Imaginary part of array."""
-    if _backend == 'numpy':
+    if _backend != 'torch':
         return np.imag(x)
     else:
         x_torch = torch.as_tensor(x)
