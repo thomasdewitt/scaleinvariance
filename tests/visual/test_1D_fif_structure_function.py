@@ -97,6 +97,23 @@ def main():
     lags_uncorrected, mean_fif_uncorrected_sf = scaleinvariance.structure_function_analysis(
         all_fif_uncorrected_data, order=2, axis=1)
 
+    # Generate LS2010_highorder FIF simulations
+    print(f"\nGenerating {n_sims} LS2010_highorder FIF simulations...")
+    all_fif_highorder_data = []
+
+    for i in range(n_sims):
+        if i%2 == 0: print(f"  LS2010_highorder simulation {i+1}/{n_sims}...",)
+
+        fif_field_highorder = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
+                                                     kernel_construction_method_flux='LS2010_highorder',
+                                                     kernel_construction_method_observable='LS2010',
+                                                     outer_scale=outer_scale)
+        all_fif_highorder_data.append(fif_field_highorder)
+
+    all_fif_highorder_data = np.vstack(all_fif_highorder_data)
+    lags_highorder, mean_fif_highorder_sf = scaleinvariance.structure_function_analysis(
+        all_fif_highorder_data, order=2, axis=1)
+
     # Generate spectral_odd FIF simulations (non-causal only, H != 0 only)
     has_odd = not causal and H != 0
     if has_odd:
@@ -145,6 +162,8 @@ def main():
               label='FIF LS2010')
     plt.loglog(lags_uncorrected, mean_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
               label='FIF naive')
+    plt.loglog(lags_highorder, mean_fif_highorder_sf, '#9467bd', linewidth=2,
+              label='FIF LS2010_highorder')
     if has_spectral:
         plt.loglog(lags_spectral, mean_fif_spectral_sf, '#2ca02c', linewidth=2,
                   label='FIF spectral')
@@ -200,6 +219,11 @@ def main():
               label='FIF LS2010 normalized')
     plt.loglog(lags_uncorrected, normalized_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
               label='FIF naive normalized')
+
+    mid_sf_highorder = mean_fif_highorder_sf[mid_idx]
+    normalized_fif_highorder_sf = (mean_fif_highorder_sf / (lags_highorder**(theoretical_zeta_fif))) / (mid_sf_highorder / (mid_lag**(theoretical_zeta_fif)))
+    plt.loglog(lags_highorder, normalized_fif_highorder_sf, '#9467bd', linewidth=2,
+              label='FIF LS2010_highorder normalized')
 
     if has_spectral:
         mid_sf_spectral = mean_fif_spectral_sf[mid_idx]

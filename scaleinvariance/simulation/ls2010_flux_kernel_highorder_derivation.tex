@@ -1,0 +1,363 @@
+
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage[margin=1in]{geometry}
+
+\title{A Higher-Order LS2010 Flux Kernel for the 1D Acausal FIF Case}
+\author{GPT-5.4 Pro Extended, Thomas D. DeWitt}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+
+The aim is to replace the current single-correction LS2010-style flux kernel with a
+more flexible acausal kernel that removes several discrete small-scale bias modes
+instead of only one.  The construction stays very close in spirit to
+Lovejoy--Schertzer (2010): the kernel is still a power law modified only at small
+$x$, and the correction amplitudes are obtained by forcing the discrete
+two-point statistic toward the desired pure logarithmic behavior.
+
+This writeup is intentionally matched to the \texttt{FIF\_1D} / \texttt{kernels.py}
+structure in the attached implementation.
+
+\section{LS2010 starting point}
+
+For the conservative 1D acausal case, LS2010 analyze the discrete quantity
+\begin{equation}
+S_f(\Delta)
+=
+\sum_{i \in \mathcal O_L}
+\left[g(i-\Delta)+g(i)\right]^\alpha,
+\qquad
+\mathcal O_L = \{-L+1,-L+3,\dots,L-1\},
+\end{equation}
+on the odd grid (their Eq.~(15)).  Pure scaling corresponds to
+\begin{equation}
+S_f(\Delta)=A + B \log \Delta
+\end{equation}
+up to finite-size effects.
+
+The term producing the dominant acausal bias is the LS2010
+\(
+S_f^{(1,1)}(\Delta)
+\)
+contribution
+\begin{equation}
+S_f^{(1,1)}(\Delta)
+=
+2\alpha\, g(\Delta)
+\sum_{\substack{1 \le i < \Delta/2 \\ i\ {\rm odd}}}
+g(i)^{\alpha-1},
+\end{equation}
+their Eq.~(27).  For the uncorrected flux kernel
+\begin{equation}
+g_0(x)=|x|^{-1/\alpha},
+\qquad
+g_0(x)^{\alpha-1}=|x|^{\beta},
+\qquad
+\beta=\frac{1}{\alpha}-1,
+\end{equation}
+LS2010 show that the first subleading correction behaves as
+\(
+\Delta^{-1/\alpha}
+\),
+and they cancel it by modifying $g$ at small $x$ (their Eq.~(29)--(31)).
+
+\section{Midpoint Euler--Maclaurin structure on the odd grid}
+
+Because the discrete kernel is evaluated on odd points
+\(
+x=2j-1 = 2(j-\tfrac12)
+\),
+the relevant partial sum is
+\begin{equation}
+T_g(L)
+=
+\sum_{j=1}^{L} g(2j-1)^{\alpha-1}.
+\end{equation}
+For the pure power-law kernel this is
+\begin{equation}
+T_0(L)
+=
+\sum_{j=1}^{L} (2j-1)^\beta
+=
+2^\beta \sum_{j=1}^{L}\left(j-\frac12\right)^\beta.
+\end{equation}
+
+Applying the midpoint Euler--Maclaurin formula to
+\(
+f(t)=(2t)^\beta
+\)
+gives
+\begin{equation}
+\sum_{j=1}^{L} f\!\left(j-\frac12\right)
+=
+\int_0^{L} f(t)\,dt
++
+\sum_{n\ge 1}
+\frac{(2^{1-2n}-1)B_{2n}}{(2n)!}
+\left[
+f^{(2n-1)}(L)-f^{(2n-1)}(0)
+\right],
+\end{equation}
+so the large-$L$ expansion has the form
+\begin{equation}
+T_0(L)
+=
+b_0 L^{1/\alpha}
++
+a_0
++
+a_1 L^{1/\alpha-2}
++
+a_2 L^{1/\alpha-4}
++
+a_3 L^{1/\alpha-6}
++\cdots .
+\end{equation}
+The half-grid shift removes the odd inverse powers that would appear in a
+left-endpoint discretization; this is one reason the acausal odd-grid kernel is
+already much better behaved than the naive kernel.
+
+Multiplying by
+\(
+g_0(\Delta)\sim \Delta^{-1/\alpha}
+\)
+then gives
+\begin{equation}
+S_f^{(1,1)}(\Delta)
+=
+c_0
++
+c_1 \Delta^{-1/\alpha}
++
+c_2 \Delta^{-2}
++
+c_3 \Delta^{-4}
++
+c_4 \Delta^{-6}
++\cdots .
+\end{equation}
+LS2010 cancel only the first non-logarithmic mode
+\(
+\Delta^{-1/\alpha}
+\).
+The remaining even inverse powers are exactly the residual smoothness that is
+still visible in acausal runs.
+
+\section{Five-mode generalization of the LS2010 ansatz}
+
+A literal symbolic cancellation of the first five midpoint-Euler--Maclaurin terms
+with inverse-power corrections becomes numerically ill-conditioned surprisingly
+fast.  A more robust extension is to keep the LS2010 real-space philosophy
+but use several short-range correction modes instead of one:
+\begin{equation}
+g_M(x)
+=
+|x|^{-1/\alpha}
+\left(
+1+\sum_{m=1}^{M} c_m e^{-|x|/\lambda_m}
+\right)^{1/(\alpha-1)},
+\qquad M=5.
+\label{eq:multi_ansatz}
+\end{equation}
+This is still exactly of the LS2010 type
+\(
+g(x)=|x|^{-1/\alpha}(1+\eta f(x))^{1/(\alpha-1)}
+\),
+except that
+\(
+\eta f(x)
+\)
+is replaced by a finite sum of exponentially localized modes.
+
+The key simplification is that
+\begin{equation}
+g_M(x)^{\alpha-1}
+=
+|x|^{1/\alpha-1}
+\left(
+1+\sum_{m=1}^{M} c_m e^{-|x|/\lambda_m}
+\right),
+\end{equation}
+so the correction enters linearly in the quantity that drives the LS2010 bias.
+Also,
+\begin{equation}
+g_M(x)^\alpha
+=
+|x|^{-1}
+\left(
+1+\sum_{m=1}^{M} c_m e^{-|x|/\lambda_m}
+\right)^{\alpha/(\alpha-1)}
+=
+|x|^{-1}\left[1+O(e^{-|x|/\lambda_1})\right],
+\end{equation}
+hence the leading $\log l$ one-point scaling is unchanged; only the additive
+finite-size constants are altered, which is exactly what LS2010 allow.
+
+\section{How the coefficients are chosen}
+
+Rather than cancel only a single asymptotic coefficient, we determine
+\(
+\bm c=(c_1,\dots,c_M)
+\)
+by forcing the \emph{full discrete} $S_f(\Delta)$ curve to be as close as possible
+to an affine function of $\log \Delta$ over the small-to-intermediate lags where
+the acausal bias matters most.
+
+Let
+\begin{equation}
+\bm S(\bm c)
+=
+\bigl(S_f(\Delta_1;\bm c),\dots,S_f(\Delta_K;\bm c)\bigr)^T,
+\qquad
+\Delta_k = 2k,
+\end{equation}
+for \(k=1,\dots,K\), with \(K\) typically chosen so that
+\(
+\Delta_{\max}=2K \approx \min(64,\,L/8)
+\).
+Let \(X\) be the \(K\times 2\) design matrix
+\begin{equation}
+X=
+\begin{bmatrix}
+1 & \log \Delta_1\\
+\vdots & \vdots\\
+1 & \log \Delta_K
+\end{bmatrix}.
+\end{equation}
+The projector orthogonal to pure log-scaling is
+\begin{equation}
+P_\perp
+=
+I - X(X^T X)^{-1}X^T.
+\end{equation}
+We then minimize
+\begin{equation}
+\Phi(\bm c)
+=
+\left\|W P_\perp \bm S(\bm c)\right\|_2^2
++
+\lambda \|\bm c\|_2^2,
+\end{equation}
+where \(W\) is an optional diagonal small-scale weighting matrix and
+\(\lambda>0\) is a tiny Tikhonov regularizer.
+
+This is a direct multi-mode extension of the LS2010 strategy:
+instead of removing only one fitted bias coefficient, we remove the first five
+numerically resolvable discrete bias modes at once.
+
+\section{Analytic Jacobian}
+
+The Gauss--Newton solve used in the code is based on the exact derivatives
+\begin{equation}
+\frac{\partial g_M(x)}{\partial c_m}
+=
+\frac{1}{\alpha-1}\,
+g_M(x)\,
+\frac{e^{-|x|/\lambda_m}}
+     {1+\sum_{n=1}^{M} c_n e^{-|x|/\lambda_n}},
+\end{equation}
+and therefore
+\begin{equation}
+\frac{\partial S_f(\Delta)}{\partial c_m}
+=
+\alpha
+\sum_{i\in \mathcal O_L}
+\left[g_M(i-\Delta)+g_M(i)\right]^{\alpha-1}
+\left(
+\frac{\partial g_M(i-\Delta)}{\partial c_m}
++
+\frac{\partial g_M(i)}{\partial c_m}
+\right).
+\end{equation}
+After projection with \(P_\perp\), the normal equations are
+\begin{equation}
+\left(J^T J + \lambda I\right)\delta \bm c
+=
+- J^T \bm r,
+\qquad
+\bm r = W P_\perp \bm S(\bm c),
+\end{equation}
+with a short damped line search to keep
+\(
+1+\sum_m c_m e^{-|x|/\lambda_m}>0
+\)
+everywhere.
+
+\section{Practical choices}
+
+The implementation uses the geometric decay-length grid
+\begin{equation}
+\lambda_m = 1.5 \times 2^{m-1},
+\qquad m=1,\dots,5,
+\end{equation}
+namely
+\(
+(1.5,3,6,12,24)
+\).
+This gave a good compromise between conditioning and flexibility.
+
+The outer-scale taper is applied with the same Hanning window already used in the
+existing implementation, so the only real change is the small-$x$ correction
+factor.
+
+\section{What this is, and what it is not}
+
+This is \emph{not} a literal closed-form fifth-order Euler--Maclaurin cancellation
+with explicit symbolic coefficients.  I tried that route first, but by the time one
+pushes to fourth/fifth order the inverse-power coefficient matching becomes
+numerically fragile and requires very large alternating coefficients.
+
+What \eqref{eq:multi_ansatz} gives instead is a robust five-mode LS2010 kernel:
+\begin{itemize}
+\item same power-law tail,
+\item same LS2010 small-$x$ correction philosophy,
+\item same discrete odd grid,
+\item same outer-scale taper,
+\item but five fitted correction modes instead of one.
+\end{itemize}
+In practice this is the version I would actually use for acausal simulations.
+
+\section{Code mapping}
+
+The code file defines two public entry points.
+
+\begin{enumerate}
+\item
+\texttt{create\_kernel\_flux\_LS2010\_highorder(size, alpha, ...)}\\
+This is the direct kernel builder for the 1D flux kernel.
+
+\item
+\texttt{create\_kernel\_LS2010\_flux\_highorder\_from\_params(...)}\\
+This is a thin wrapper meant for the existing call site
+\begin{verbatim}
+kernel1 = create_kernel_LS2010(size, flux_exponent, flux_norm_ratio_exp,
+                               causal=causal, outer_scale=outer_scale,
+                               outer_scale_width_factor=outer_scale_width_factor,
+                               final_power=flux_final_power)
+\end{verbatim}
+so the replacement is only
+\begin{verbatim}
+kernel1 = create_kernel_LS2010_flux_highorder_from_params(
+    size, flux_exponent, flux_norm_ratio_exp,
+    causal=causal, outer_scale=outer_scale,
+    outer_scale_width_factor=outer_scale_width_factor,
+    final_power=flux_final_power, order=5,
+)
+\end{verbatim}
+\end{enumerate}
+
+\section{Expectation}
+
+For the regime emphasized by LS2010, namely the acausal 1D case and especially
+\(
+\alpha>1
+\),
+this multi-mode kernel should reduce the residual oversmoothing much more than a
+single correction factor.  It is still real-space and positivity preserving, so it
+remains compatible with the extremal Levy convolution approach.
+
+\end{document}

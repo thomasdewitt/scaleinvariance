@@ -197,6 +197,139 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
 
     return kernel
 
+
+def create_kernel_LS2010_highorder(size, exponent, norm_ratio_exponent, causal=False,
+                                   outer_scale=None, outer_scale_width_factor=2.0,
+                                   final_power=None, order=3):
+    """
+    LS2010 flux kernel with higher-order discrete-bias correction.
+
+    Extends Lovejoy & Schertzer (2010) Section 4.1 by fitting M short-range
+    exponential correction modes via a single linearized step on the discrete
+    S_f(Δ) residual. This cancels multiple bias terms (Δx^{-1/α}, Δx^{-2/α},
+    Euler-Maclaurin Δx^{-2}, ...) simultaneously without iteration.
+
+    Same interface as create_kernel_LS2010 plus an ``order`` parameter.
+    Intended for the flux kernel only (calibration uses S_f structure).
+
+    Parameters
+    ----------
+    size : int
+        Kernel length (1D only).
+    exponent : float
+        Power-law exponent (flux: -1/α').
+    norm_ratio_exponent : float
+        Normalization ratio exponent (flux: -1/α). Used to recover α.
+    causal : bool, optional
+        If True, zero the first half of the kernel.
+    outer_scale : float, optional
+        Large-scale cutoff.
+    outer_scale_width_factor : float, optional
+        Transition width for outer scale taper.
+    final_power : float, optional
+        Accepted for interface compatibility; not applied separately since the
+        correction ansatz already incorporates the 1/(α-1) power.
+    order : int, optional
+        Number of exponential correction modes. Default 3.
+    """
+    if not isinstance(size, int):
+        raise ValueError("create_kernel_LS2010_highorder currently supports 1D only.")
+
+    alpha = -1.0 / float(norm_ratio_exponent)
+    if abs(alpha - 1.0) < 1e-12 or alpha <= 0:
+        raise ValueError("alpha must be > 0 and != 1.")
+
+    power = 1.0 / (alpha - 1.0)
+
+    # LS2010 odd grid (dx=2 spacing)
+    pos = np.arange(-(size - 1), size, 2, dtype=int)
+    abspos = np.abs(pos)
+    distance = abspos.astype(float)
+    n_pts = len(pos)
+
+    # Uncorrected kernel
+    g0 = distance ** (-1.0 / alpha)
+
+    # Exponential correction modes with geometric decay lengths
+    lambdas = 1.5 * 2.0 ** np.arange(order, dtype=float)
+    modes = np.exp(-distance[:, None] / lambdas[None, :])
+
+    # Jacobian dg/dc_m at c=0
+    jac_g = power * g0[:, None] * modes
+
+    # Lookup arrays indexed by |position| for shifted S_f evaluation
+    max_abs = size - 1
+    g_lut = np.zeros(max_abs + 1)
+    jac_lut = np.zeros((max_abs + 1, order))
+    g_lut[abspos] = g0
+    jac_lut[abspos, :] = jac_g
+
+    # Determine S_f lag range
+    if outer_scale is None:
+        eff_scale = size
+    else:
+        eff_scale = min(size, int(max(8, round(float(outer_scale)))))
+    max_fit_delta = min(64, max(8, eff_scale // 8))
+    deltas = np.arange(2, 2 * max_fit_delta + 1, 2, dtype=int)
+    n_deltas = len(deltas)
+
+    # Compute S_f(Δ) and its Jacobian at c=0
+    Sf = np.empty(n_deltas)
+    JSf = np.empty((n_deltas, order))
+
+    for k, delta in enumerate(deltas):
+        shifted = np.abs(pos - delta)
+        mask = shifted <= max_abs
+
+        g_shifted = np.zeros(n_pts)
+        jac_shifted = np.zeros((n_pts, order))
+        g_shifted[mask] = g_lut[shifted[mask]]
+        jac_shifted[mask, :] = jac_lut[shifted[mask], :]
+
+        pair = g_shifted + g0
+        Sf[k] = np.sum(pair ** alpha)
+        JSf[k, :] = np.sum(
+            alpha * pair[:, None] ** (alpha - 1) * (jac_shifted + jac_g),
+            axis=0,
+        )
+
+    # Project out pure log-scaling (affine in log Δ)
+    log_d = np.log(deltas.astype(float))
+    X = np.column_stack([np.ones(n_deltas), log_d])
+    P = np.eye(n_deltas) - X @ np.linalg.pinv(X)
+
+    residual = P @ Sf
+    J_proj = P @ JSf
+
+    # Single linearized solve with Tikhonov regularization
+    coeffs = -np.linalg.solve(
+        J_proj.T @ J_proj + 1e-4 * np.eye(order),
+        J_proj.T @ residual,
+    )
+
+    # Build corrected kernel
+    inside = 1.0 + modes @ coeffs
+    if np.any(inside <= 0):
+        kernel = g0
+    else:
+        kernel = g0 * inside ** power
+
+    # Outer scale taper (inline numpy to avoid backend mixing)
+    if outer_scale is not None:
+        dist_dx1 = distance / 2.0
+        tw = float(outer_scale) * float(outer_scale_width_factor)
+        le = float(outer_scale) - tw / 2.0
+        norm_d = np.clip((dist_dx1 - le) / tw, 0.0, 1.0)
+        taper = 0.5 * (1.0 + np.cos(np.pi * norm_d))
+        kernel = kernel * taper
+
+    if causal:
+        kernel = kernel.copy()
+        kernel[:size // 2] = 0
+
+    return B.asarray(kernel)
+
+
 # Naive kernel construction methods
 
 def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0):

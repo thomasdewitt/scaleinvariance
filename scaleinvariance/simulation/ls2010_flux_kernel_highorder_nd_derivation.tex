@@ -1,0 +1,320 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage[margin=1in]{geometry}
+
+\title{A Higher-Order LS2010 Flux Kernel for the N-D Acausal FIF Case}
+\author{GPT-5.4 Pro Extended, Thomas D. DeWitt}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+
+The aim is to build the N-D analogue of the higher-order 1D acausal flux kernel:
+a drop-in replacement for the \texttt{FIF\_ND} flux-kernel call that stays in the
+Lovejoy--Schertzer (2010) real-space framework, keeps the same large-scale power-law
+tail, but removes several discrete small-scale bias modes instead of only the single
+mode corrected in the present implementation.
+
+As in the 1D file, this is a five-mode LS2010-style correction rather than a literal
+closed-form fifth-order symbolic Euler--Maclaurin cancellation.
+
+\section{What the current N-D code is doing}
+
+Your current N-D FIF implementation uses the flux-kernel parameters
+\begin{equation}
+\alpha' = \frac{1}{1-1/\alpha},
+\qquad
+\texttt{flux\_exponent} = -\frac{d_{\mathrm{eff}}}{\alpha'},
+\qquad
+\texttt{flux\_norm\_ratio\_exp} = -\frac{d_{\mathrm{eff}}}{\alpha},
+\qquad
+\texttt{flux\_final\_power} = \frac{1}{\alpha-1},
+\end{equation}
+where $d_{\mathrm{eff}}$ is either the spatial dimension or the user-supplied
+\texttt{scale\_metric\_dim}.  After the final power is applied, the flux kernel has the
+usual tail
+\begin{equation}
+ g_0(\bm x) \propto \|\bm x\|^{-d_{\mathrm{eff}}/\alpha}.
+\end{equation}
+This is exactly how the current \texttt{FIF\_ND} and \texttt{create\_kernel\_LS2010}
+code are wired. 
+
+\section{Why the same LS2010 logic extends to higher dimensions}
+
+LS2010 explicitly state that the discrete normalization generalizes from
+\begin{equation}
+N_{D,f} = \frac{N_D}{\Delta X^D}
+\end{equation}
+to arbitrary $D$, and in Appendix~B they show that for isotropic higher-dimensional
+systems the angular integration leaves the same radial singular structure as in 1D.
+In their notation, after integrating over the angles on the displaced
+$r=\mathrm{const}$ hypersurfaces, one recovers the same logarithmic core measure
+\begin{equation}
+\frac{dr}{r(1-r^2)}\,\Omega_D,
+\end{equation}
+with $N_D=\Omega_D$.  So the higher-dimensional isotropic problem reduces to the
+same radial structure as the 1D calculation; this is why they describe the extension
+as straightforward.
+
+This strongly suggests that the finite-size correction should remain a \emph{radial}
+small-$r$ modification of the kernel, now with the $d_{\mathrm{eff}}$-dimensional
+power-law tail.
+
+\section{Leading discrete bias in N dimensions}
+
+In 1D, LS2010 identify the dominant bad term as the discrete
+\(S_f^{(1,1)}\) contribution.  The same mechanism persists in higher dimensions:
+it comes from the neighborhoods of the two singularities at
+\(\bm x=\bm 0\) and \(\bm x=\bm \Delta\).
+
+For an isotropic N-D flux kernel with tail
+\begin{equation}
+ g_0(r) \sim r^{-d_{\mathrm{eff}}/\alpha},
+\end{equation}
+we can estimate the higher-dimensional analogue of the LS2010 term by combining
+one far-field factor $g_0(\Delta)$ with a local integral of $g_0^{\alpha-1}$:
+\begin{equation}
+S_f^{(1,1)}(\Delta)
+\sim
+2\alpha\, g_0(\Delta)
+\int_1^{\Delta/2}
+\rho^{d_{\mathrm{eff}}-1}
+\bigl(g_0(\rho)\bigr)^{\alpha-1}
+\,d\rho.
+\end{equation}
+Since
+\begin{equation}
+\bigl(g_0(\rho)\bigr)^{\alpha-1}
+\sim
+\rho^{-d_{\mathrm{eff}}(\alpha-1)/\alpha},
+\end{equation}
+the integrand is
+\begin{equation}
+\rho^{d_{\mathrm{eff}}-1-d_{\mathrm{eff}}(\alpha-1)/\alpha}
+=
+\rho^{d_{\mathrm{eff}}/\alpha - 1},
+\end{equation}
+so the radial integral contributes
+\begin{equation}
+\int_1^{\Delta/2} \rho^{d_{\mathrm{eff}}/\alpha -1} d\rho
+=
+A + B\,\Delta^{d_{\mathrm{eff}}/\alpha}.
+\end{equation}
+Multiplying by
+\(g_0(\Delta)\sim \Delta^{-d_{\mathrm{eff}}/\alpha}\)
+therefore yields
+\begin{equation}
+S_f^{(1,1)}(\Delta)
+=
+C_0 + C_1\,\Delta^{-d_{\mathrm{eff}}/\alpha} + \cdots .
+\end{equation}
+So the higher-dimensional leading non-logarithmic mode is the natural N-D analogue
+of the 1D LS2010 correction, namely
+\begin{equation}
+\Delta^{-d_{\mathrm{eff}}/\alpha}.
+\end{equation}
+This also explains why the small-scale bias is already milder in 2D than in 1D:
+for fixed $\alpha$, the correction falls faster when $d_{\mathrm{eff}}$ increases.
+
+\section{Five-mode N-D LS2010 ansatz}
+
+The direct N-D extension of the 1D higher-order kernel is the radial ansatz
+\begin{equation}
+ g_M(r)
+ =
+ r^{-d_{\mathrm{eff}}/\alpha}
+ \left(
+   1 + \sum_{m=1}^{M} c_m e^{-r/\lambda_m}
+ \right)^{1/(\alpha-1)},
+ \qquad M=5.
+ \label{eq:nd_ansatz}
+\end{equation}
+This keeps exactly the same LS2010 philosophy:
+\begin{itemize}
+\item the kernel is modified only at small $r$,
+\item the far-field tail is unchanged,
+\item the correction remains strictly positive provided
+\(1+\sum_m c_m e^{-r/\lambda_m}>0\).
+\end{itemize}
+
+The key simplification is the same as in 1D:
+\begin{equation}
+ g_M(r)^{\alpha-1}
+ =
+ r^{-d_{\mathrm{eff}}(\alpha-1)/\alpha}
+ \left(
+   1 + \sum_{m=1}^{M} c_m e^{-r/\lambda_m}
+ \right),
+\end{equation}
+so the correction enters linearly in the quantity that drives the LS2010 bias.
+At the same time,
+\begin{equation}
+ g_M(r)^\alpha
+ =
+ r^{-d_{\mathrm{eff}}}
+ \left[1 + O\!igl(e^{-r/\lambda_1}\bigr)\right],
+\end{equation}
+so the one-point logarithmic scaling is unchanged; only the additive finite-size
+constants are altered, which is entirely in the LS2010 spirit.
+
+\section{Discrete fitting criterion in N dimensions}
+
+For the N-D odd grid, let
+\begin{equation}
+\mathcal O_{\bm L}
+=
+\prod_{j=1}^{D}
+\{-L_j+1,-L_j+3,\dots,L_j-1\}
+\end{equation}
+be the LS2010 odd lattice.  For a displacement vector \(\bm \Delta\) with even
+components, define the exact discrete LS2010 quantity
+\begin{equation}
+S_f(\bm \Delta; \bm c)
+=
+\sum_{\bm i \in \mathcal O_{\bm L}}
+\left[g_M(\bm i-\bm \Delta) + g_M(\bm i)\right]^\alpha.
+\end{equation}
+For a perfectly scaling isotropic kernel, this should be affine in
+\(\log \|\bm \Delta\|\).
+
+In practice the implementation evaluates \(S_f\) along a small set of rays
+\begin{equation}
+\bm \Delta = 2k\,\hat{\bm d}_r,
+\qquad
+k=1,\dots,K,
+\end{equation}
+where the default choices are the coordinate axes and, for the default Euclidean
+metric, also the full diagonal.  The factor of 2 is the physical LS2010 odd-grid
+spacing; in the code, the shifts are represented in index units, so the calibration
+uses the equivalent lags
+\(k\,\|\hat{\bm d}_r\|\).
+
+Collect all sampled values in a vector
+\begin{equation}
+\bm S(\bm c)
+=
+\bigl(S_f(\bm \Delta_1;\bm c),\dots,S_f(\bm \Delta_N;\bm c)\bigr)^T,
+\end{equation}
+and form the projector orthogonal to pure logarithmic scaling,
+\begin{equation}
+P_\perp = I - X(X^T X)^{-1}X^T,
+\qquad
+X=
+\begin{bmatrix}
+1 & \log \ell_1\\
+\vdots & \vdots\\
+1 & \log \ell_N
+\end{bmatrix},
+\end{equation}
+where \(\ell_n\) is the sampled lag magnitude.  The fitted coefficients are then
+obtained by minimizing
+\begin{equation}
+\Phi(\bm c)
+=
+\|W P_\perp \bm S(\bm c)\|_2^2 + \lambda\|\bm c\|_2^2,
+\end{equation}
+with optional small-lag weights \(W\) and a tiny Tikhonov regularizer \(\lambda\).
+
+This is the N-D analogue of the 1D construction: instead of cancelling just the
+first asymptotic term, the kernel is tuned so the full discrete N-D
+\(S_f\)-surface is as log-affine as possible over the range where the bias is most
+visible.
+
+\section{Analytic Jacobian}
+
+The Gauss--Newton step uses the exact derivatives
+\begin{equation}
+\frac{\partial g_M(r)}{\partial c_m}
+=
+\frac{1}{\alpha-1}
+\,g_M(r)
+\frac{e^{-r/\lambda_m}}
+     {1+\sum_n c_n e^{-r/\lambda_n}}.
+\end{equation}
+Hence
+\begin{equation}
+\frac{\partial S_f(\bm \Delta)}{\partial c_m}
+=
+\alpha
+\sum_{\bm i \in \mathcal O_{\bm L}}
+\left[g_M(\bm i-\bm \Delta)+g_M(\bm i)\right]^{\alpha-1}
+\left(
+\frac{\partial g_M(\bm i-\bm \Delta)}{\partial c_m}
++
+\frac{\partial g_M(\bm i)}{\partial c_m}
+\right).
+\end{equation}
+After projection and weighting, the normal equations are
+\begin{equation}
+\left(J^T J + \lambda I\right)\delta \bm c = -J^T \bm r,
+\qquad
+\bm r = W P_\perp \bm S(\bm c),
+\end{equation}
+with a short damped line search to keep
+\(1+\sum_m c_m e^{-r/\lambda_m}>0\)
+everywhere.
+
+\section{Handling custom scale metrics}
+
+Your N-D FIF code already supports a user-supplied \texttt{scale\_metric} and a
+possibly non-integer \texttt{scale\_metric\_dim}.  The new kernel preserves that
+interface.
+
+The only change is that the Euclidean odd-grid radius $r$ in
+Eq.~\eqref{eq:nd_ansatz} is replaced by the supplied metric field, and the
+Euclidean dimension $D$ is replaced by
+\(d_{\mathrm{eff}} = \texttt{scale\_metric\_dim}\).
+So the implementation is still radial with respect to the chosen metric.
+
+For the default isotropic metric, the fit uses axes plus the full diagonal.  For a
+custom metric, the default fit uses axes only; this keeps the internal calibration
+agnostic about the exact angular structure of the metric while still removing the
+worst small-scale bias modes.
+
+\section{Code mapping}
+
+The code file defines two public entry points.
+
+\begin{enumerate}
+\item
+\texttt{create\_kernel\_flux\_LS2010\_highorder\_nd(size, alpha, ...)}\\
+This is the direct N-D kernel builder.
+
+\item
+\texttt{create\_kernel\_LS2010\_flux\_highorder\_nd\_from\_params(...)}\\
+This is the thin wrapper intended for the existing \texttt{FIF\_ND} call site.
+The swap is simply
+\begin{verbatim}
+kernel1 = create_kernel_LS2010_flux_highorder_nd_from_params(
+    sim_size, flux_exponent, flux_norm_ratio_exp,
+    causal=False, outer_scale=outer_scale,
+    outer_scale_width_factor=outer_scale_width_factor,
+    final_power=flux_final_power,
+    scale_metric=scale_metric,
+    scale_metric_dim=scale_metric_dim,
+    order=5,
+)
+\end{verbatim}
+in place of the current
+\begin{verbatim}
+kernel1 = create_kernel_LS2010(
+    sim_size, flux_exponent, flux_norm_ratio_exp,
+    causal=False, outer_scale=outer_scale,
+    outer_scale_width_factor=outer_scale_width_factor,
+    final_power=flux_final_power,
+    scale_metric=scale_metric,
+)
+\end{verbatim}
+\end{enumerate}
+
+\section{What to expect}
+
+This kernel should help most in the regime where the current N-D LS2010-style
+single correction is still visibly too smooth at the smallest resolved scales.  The
+benefit should be strongest in 2D/3D acausal flux generation with \(\alpha>1\),
+while still preserving the same real-space extremal-L\'evy convolution workflow,
+odd-grid LS2010 construction, and outer-scale tapering used in your current code.
+
+\end{document}

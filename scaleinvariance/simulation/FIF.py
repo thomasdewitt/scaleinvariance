@@ -4,6 +4,7 @@ from .. import backend as B
 from .fbm import fBm_1D_circulant, fBm_ND_circulant
 from .kernels import (
     create_kernel_LS2010,
+    create_kernel_LS2010_highorder,
     create_kernel_naive,
     create_kernel_spectral,
     create_kernel_spectral_odd,
@@ -284,12 +285,19 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
                                       causal=causal, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power)
+    elif kernel_construction_method_flux == 'LS2010_highorder':
+        kernel1 = create_kernel_LS2010_highorder(
+            size, flux_exponent, flux_norm_ratio_exp,
+            causal=causal, outer_scale=outer_scale,
+            outer_scale_width_factor=outer_scale_width_factor,
+            final_power=flux_final_power,
+        )
     elif kernel_construction_method_flux == 'naive':
         kernel1 = create_kernel_naive(size, flux_exponent, causal=causal, outer_scale=outer_scale,
                                      outer_scale_width_factor=outer_scale_width_factor)
     else:
         raise ValueError(f"Unknown kernel_construction_method_flux: {kernel_construction_method_flux}. "
-                         "Supported: 'LS2010', 'naive'.")
+                         "Supported: 'LS2010', 'LS2010_highorder', 'naive'.")
 
     integrated = periodic_convolve(noise, kernel1)
     del noise, kernel1  # Clean memory
