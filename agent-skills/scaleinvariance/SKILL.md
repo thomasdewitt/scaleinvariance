@@ -90,6 +90,9 @@ All three methods estimate the same H parameter but may give slightly different 
 | Set threads       | `set_num_threads(n)`                                           | Default: 90% CPU count                              |
 | Set precision     | `set_numerical_precision('float32')` or `('float64')`          | Default: `'float64'`. Applies to both backends.     |
 | Get precision     | `get_numerical_precision()`                                    | Returns current precision string                    |
+| Set device        | `set_device('cpu')` or `set_device('cuda')`                    | GPU acceleration (torch backend only)               |
+| Get device        | `get_device()`                                                 | Returns current device string                       |
+| Convert to numpy  | `to_numpy(x)`                                                  | Convert backend result to numpy array               |
 
 ## Function Signatures
 
@@ -347,6 +350,10 @@ scaleinvariance.set_backend('numpy')
 # Use torch if available (auto-detected by default)
 scaleinvariance.set_backend('torch')
 
+# GPU acceleration (torch backend only)
+scaleinvariance.set_device('cuda')   # use GPU
+scaleinvariance.set_device('cpu')    # back to CPU
+
 # Control threading
 scaleinvariance.set_num_threads(8)
 
@@ -356,7 +363,9 @@ scaleinvariance.set_numerical_precision('float32')
 assert scaleinvariance.get_numerical_precision() == 'float32'
 ```
 
-All functions return NumPy arrays regardless of backend.
+All public functions return NumPy arrays regardless of backend. Internally,
+the torch backend keeps data as native tensors (on the active device) to
+avoid per-operation CPU<->GPU transfers.
 
 ### Overflow guards in FIF simulations
 
