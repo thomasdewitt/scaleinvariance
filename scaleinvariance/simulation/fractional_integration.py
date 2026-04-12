@@ -9,8 +9,7 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
     Fourier wavenumber ``sqrt(sum f_i^2)``. Works for 1D and N-D real
     signals. The DC bin is regularised by clipping frequencies below
     ``1/outer_scale`` and then overwriting the DC bin with the nearest
-    nonzero-frequency bin, matching the existing ``create_kernel_spectral``
-    behaviour.
+    nonzero-frequency bin.
 
     The Fourier-space exponent is ``-H`` because fractional integration of
     order H is convolution with the Riesz potential ``|r|^(H - d)``, whose

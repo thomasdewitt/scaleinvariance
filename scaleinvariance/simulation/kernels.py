@@ -254,79 +254,12 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
 
 # Spectral kernel construction
 
-def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
-                           final_power=None, scaling_dimension=None):
-    """
-    Create a packed real-valued Fourier-space power-law transfer function.
-
-    Returns the non-negative half-spectrum (shape ``size[:-1] + (size[-1]//2+1,)``
-    for ND, or ``(size//2+1,)`` for 1D) matching the output of ``rfftn``.
-    Pass to ``periodic_convolve`` / ``periodic_convolve_nd`` with
-    ``kernel_is_fourier=True``. Only valid for non-causal periodic filtering.
-    """
-    if causal:
-        raise ValueError("Spectral kernel construction does not support causal kernels")
-
-    if isinstance(size, int):
-        shape = (size,)
-        if scaling_dimension is None:
-            scaling_dimension = 1.0
-    else:
-        shape = tuple(size)
-        if scaling_dimension is None:
-            scaling_dimension = float(len(shape))
-
-    effective_exponent = exponent if final_power is None else exponent * final_power
-    response_exponent = -(float(scaling_dimension) + effective_exponent)
-
-    ndim = len(shape)
-    rfft_shape = shape[:-1] + (shape[-1] // 2 + 1,)
-
-    freqs_squared = None
-    for axis_idx, n in enumerate(shape):
-        if axis_idx == ndim - 1:
-            axis = B.rfftfreq(n, d=1.0)
-        else:
-            axis = B.fftfreq(n, d=1.0)
-        broadcast_shape = [1] * ndim
-        broadcast_shape[axis_idx] = axis.size
-        term = axis.reshape(broadcast_shape) ** 2
-        if freqs_squared is None:
-            freqs_squared = term
-        else:
-            freqs_squared = freqs_squared + term
-        del axis, term
-    freqs = B.sqrt(freqs_squared)
-    del freqs_squared
-
-    if outer_scale is None:
-        outer_scale = max(shape)
-    min_freq = 1.0 / float(outer_scale)
-    freqs_regularized = B.maximum(freqs, min_freq)
-    del freqs
-
-    response = freqs_regularized ** response_exponent
-    del freqs_regularized
-    # Materialise in case broadcasting left the array virtual.
-    if response.shape != rfft_shape:
-        response = response + B.zeros(rfft_shape, dtype=response.dtype)
-
-    if rfft_shape == (1,):
-        response[(0,)] = 1.0
-    elif ndim == 1:
-        response[0] = response[1]
-    else:
-        response[(0,) * ndim] = response[(1,) + (0,) * (ndim - 1)]
-
-    return response
-
-
 def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
                                final_power=None, scaling_dimension=None):
     """
     Create an odd (antisymmetric) Fourier-space transfer function from a power law.
 
-    Like create_kernel_spectral, but the transfer function is multiplied by
+    Like the even spectral kernel, but the transfer function is multiplied by
     i*sign(f), producing a purely imaginary spectrum whose inverse FFT is
     real and antisymmetric.
 
