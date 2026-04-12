@@ -117,7 +117,7 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
         fit_line : np.ndarray
             The fitted line used to estimate H.
     """
-    data = np.asarray(data)
+    data = B.asarray(data)
     array_size = data.shape[axis]
 
     # Check minimum array size for reliable Hurst estimation

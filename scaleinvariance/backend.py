@@ -892,6 +892,11 @@ def _convolve1d_fft(signal, kernel, axis):
     """FFT-based aperiodic convolution, mode='valid'."""
     n_sig = signal.shape[axis]
     n_ker = len(kernel)
+    if n_ker > n_sig:
+        raise ValueError(
+            f"Kernel length ({n_ker}) exceeds signal length ({n_sig}) along axis {axis}; "
+            "mode='valid' requires kernel <= signal."
+        )
     n_fft = n_sig + n_ker - 1
     n_out = n_sig - n_ker + 1
 

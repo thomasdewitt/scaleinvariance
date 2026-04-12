@@ -42,11 +42,10 @@ def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers 
         raise ValueError("nan_behavior must be 'raise' or 'ignore'")
 
     # Check for integer dtype before converting to backend array
-    data_np = np.asarray(data)
-    if np.issubdtype(data_np.dtype, np.integer):
-        data_np = data_np.astype(np.float32, copy=False)
-
-    data = B.asarray(data_np)
+    if isinstance(data, np.ndarray) and np.issubdtype(data.dtype, np.integer):
+        data = B.asarray(data, dtype=B._active_real_dtype_np())
+    else:
+        data = B.asarray(data)
     has_nans = B.any(B.isnan(data))
 
     if has_nans and nan_behavior == 'raise':
@@ -141,7 +140,7 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
         fit_line : np.ndarray
             The fitted line used to estimate H.
     """
-    data = np.asarray(data)
+    data = B.asarray(data)
     array_size = data.shape[axis]
 
     # Check minimum array size for reliable Hurst estimation
