@@ -33,25 +33,30 @@ def fBm_1D_circulant(size, H, periodic=True):
     if not periodic:
         size *= 2  # Double size to eliminate periodicity artifacts
 
-    # Frequency array with proper normalization for physical wavelengths
-    k = B.fftfreq(size, d=1.0) * 2 * B.pi
-    k[0] = 1  # Avoid division by zero at k=0
+    # Build the half-spectrum (DC + positive freqs + Nyquist) directly and
+    # use irfft instead of materialising a full-size Hermitian array.
+    k_half = B.rfftfreq(size, d=1.0) * 2 * B.pi
+    k_half[0] = 1.0  # avoid division by zero at DC
 
-    # Power spectrum: |k|^(-β) where β = 2H + 1
     beta = 2 * H + 1
-    power_spectrum = B.abs(k) ** (-beta)
+    power_half = B.abs(k_half) ** (-beta)
+    del k_half
 
-    # Random complex phases
-    phases = B.rand(size) * 2 * B.pi
-    complex_amplitudes = B.sqrt(power_spectrum) * B.exp(1j * phases)
+    phases = B.rand(power_half.size) * 2 * B.pi
+    amplitude = B.sqrt(power_half)
+    del power_half
 
-    # Ensure Hermitian symmetry for real output
+    complex_half = (amplitude * B.cos(phases)) + 1j * (amplitude * B.sin(phases))
+    del amplitude, phases
+    # Imaginary part of DC and (if size is even) Nyquist must be zero for
+    # the resulting real sequence; irfft enforces this by construction,
+    # but explicitly zeroing keeps behaviour identical to the legacy path.
+    complex_half[0] = complex_half[0].real + 0j
     if size % 2 == 0:
-        complex_amplitudes[size//2] = B.real(complex_amplitudes[size//2]) + 0j
-    complex_amplitudes[size//2+1:] = B.conj(B.flip(complex_amplitudes[1:size//2], axis=0))
+        complex_half[-1] = complex_half[-1].real + 0j
 
-    # Inverse FFT to get real space
-    fBm = B.real(B.ifft(complex_amplitudes))
+    fBm = B.irfft(complex_half, n=size)
+    del complex_half
 
     # Return first half if non-periodic mode
     if not periodic:
@@ -111,15 +116,32 @@ def fBm_ND_circulant(size, H, periodic=True):
     output_size = size
     working_size = tuple(s * 2 if not p else s for s, p in zip(size, periodic))
 
-    # Create frequency arrays for each dimension
-    freq_arrays = [B.fftfreq(n, d=1.0) * 2 * B.pi for n in working_size]
+    # Build the half-size (rfft-packed) squared frequency volume via
+    # broadcasted 1D axes — never materialise D full-size coordinate grids.
+    last_dim_half = working_size[-1] // 2 + 1
+    rfft_shape = working_size[:-1] + (last_dim_half,)
 
-    # Create meshgrid of frequencies
-    freq_grids = B.meshgrid(*freq_arrays, indexing='ij')
+    K_squared = None
+    for axis_idx in range(ndim):
+        if axis_idx == ndim - 1:
+            axis = B.rfftfreq(working_size[-1], d=1.0) * 2 * B.pi
+        else:
+            axis = B.fftfreq(working_size[axis_idx], d=1.0) * 2 * B.pi
+        broadcast_shape = [1] * ndim
+        broadcast_shape[axis_idx] = axis.size
+        term = axis.reshape(broadcast_shape) ** 2
+        if K_squared is None:
+            K_squared = term
+        else:
+            K_squared = K_squared + term
+        del axis, term
 
-    # Compute radial frequency magnitude
-    K_squared = sum(kg**2 for kg in freq_grids)
     K = B.sqrt(K_squared)
+    del K_squared
+
+    # Materialise so in-place writes below touch a real allocation, not a view.
+    if K.shape != rfft_shape:
+        K = K + B.zeros(rfft_shape, dtype=K.dtype)
 
     # Avoid division by zero at k=0
     zero_idx = (0,) * ndim
@@ -127,21 +149,17 @@ def fBm_ND_circulant(size, H, periodic=True):
 
     # Power spectrum: |k|^(-β) where β = 2H + D for D dimensions
     beta = 2 * H + ndim
-    power_spectrum = K ** (-beta)
+    power_spectrum_half = K ** (-beta)
+    del K
 
-    # Use rfftn approach - only need half the last dimension
-    last_dim_half = working_size[-1] // 2 + 1
-    rfft_shape = working_size[:-1] + (last_dim_half,)
-
-    # Create random phases for the non-redundant portion
+    # Random phases for the non-redundant portion
     phases = B.rand(*rfft_shape) * 2 * B.pi
 
-    # Extract corresponding power spectrum slice
-    slices = tuple(slice(None) for _ in range(ndim - 1)) + (slice(None, last_dim_half),)
-    power_spectrum_half = power_spectrum[slices]
-
     # Create complex amplitudes
-    complex_amplitudes = B.sqrt(power_spectrum_half) * B.exp(1j * phases)
+    amplitude = B.sqrt(power_spectrum_half)
+    del power_spectrum_half
+    complex_amplitudes = (amplitude * B.cos(phases)) + 1j * (amplitude * B.sin(phases))
+    del amplitude, phases
 
     # Handle Nyquist frequencies for real output
     # Last dimension Nyquist (if even)

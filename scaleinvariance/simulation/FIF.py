@@ -8,6 +8,31 @@ from .kernels import (
     create_kernel_spectral,
     create_kernel_spectral_odd,
 )
+from .fractional_integration import fractional_integral_spectral
+
+def _clip_and_exp_flux(scaled, caller_name):
+    """Clip the log-flux to safe exponent range for the active precision,
+    warn if saturation occurred, and return ``exp(scaled)``.
+
+    Prevents unbounded `exp(scaled)` from producing ``inf`` for extreme
+    cascade amplitudes, and lets users know their simulation hit the
+    ceiling instead of silently saturating.
+    """
+    lo, hi = B.exp_clip_limits()
+    saturated = int(B.sum(B.asarray(scaled < lo).astype(int))) + \
+                int(B.sum(B.asarray(scaled > hi).astype(int)))
+    scaled_clipped = B.clip(scaled, lo, hi)
+    flux = B.exp(scaled_clipped)
+    if saturated > 0:
+        warnings.warn(
+            f"{caller_name}: {saturated} flux samples clipped at exp limits "
+            f"for precision={B.get_numerical_precision()} "
+            "(cascade saturated; consider smaller C1 or higher precision).",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return flux
+
 
 def extremal_levy(alpha, size=1):
     """
@@ -28,36 +53,47 @@ def extremal_levy(alpha, size=1):
     alpha_t = alpha
     phi0 = -(B.pi/2) * (1 - B.abs(1 - alpha_t)) / alpha_t
     R = B.exponential(scale=1.0, size=size)
-    eps = 1e-12
-    cos_phi = B.cos(phi)
-    cos_phi = B.where(B.abs(cos_phi) < eps, B.full_like(cos_phi, eps), cos_phi)
-    abs_alpha1 = B.abs(alpha_t - 1)
-    abs_alpha1 = B.where(abs_alpha1 < eps, B.full_like(abs_alpha1, eps), abs_alpha1)
+    eps = B.eps()
 
-    denom = B.cos(phi - alpha_t * (phi - phi0))
-    denom = B.where(denom < eps, B.full_like(denom, eps), denom)
+    # phi ∈ [-pi/2, pi/2] so cos(phi) ≥ 0; clip protects the negative-power
+    # below against underflow (and floating-point drift at the endpoints).
+    cos_phi = B.clip(B.cos(phi), eps, None)
 
-    R = B.where(R < eps, B.full_like(R, eps), R)
+    abs_alpha1 = float(B.abs(alpha_t - 1))
+    if abs_alpha1 < eps:
+        abs_alpha1 = eps
+
+    denom = B.clip(B.cos(phi - alpha_t * (phi - phi0)), eps, None)
+    R = B.clip(R, eps, None)
+
     sample = (
         B.sign(alpha_t - 1) *
         B.sin(alpha_t * (phi - phi0)) *
         (cos_phi * abs_alpha1) ** (-1/alpha_t) *
         (denom / R) ** ((1 - alpha_t) / alpha_t)
     )
+    del phi, cos_phi, denom, R
     return sample
 
 # Convolutions
 def periodic_convolve(signal, kernel, kernel_is_fourier=False):
     """
     Performs periodic convolution of two 1D arrays using Fourier methods.
-    Both arrays must have the same length.
+
+    When the kernel is real (either a real-space kernel or a real-valued
+    Fourier-space response), this uses rfft/irfft, roughly halving the
+    complex buffer memory. When the kernel is a complex Fourier-space
+    response (e.g. from ``create_kernel_spectral_odd``), it falls back to
+    the full fft/ifft path.
+
+    Fourier-space kernels may be supplied as either full-size ``N`` or
+    packed rfft half-size ``N//2+1``.
 
     Parameters:
         signal (array-like): Input signal array.
         kernel (array-like): Convolution kernel array (real-space) or
             Fourier-space transfer function if *kernel_is_fourier* is True.
-        kernel_is_fourier (bool): If True, *kernel* is already in Fourier space
-            and will be used directly (no ifftshift/fft).
+        kernel_is_fourier (bool): If True, *kernel* is already in Fourier space.
 
     Returns:
         ndarray: The result of the periodic convolution.
@@ -66,32 +102,59 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
         ValueError: If signal and kernel lengths do not match.
     """
     signal = B.asarray(signal)
+    n = signal.size
 
-    if kernel_is_fourier:
+    # Full-size complex Fourier kernel (e.g. spectral_odd): fall back to fft.
+    if kernel_is_fourier and np.iscomplexobj(kernel):
         fft_kernel = kernel
+        if n != fft_kernel.size:
+            raise ValueError(
+                "Signal and kernel must have the same length for periodic convolution."
+            )
+        fft_signal = B.fft(signal)
+        return B.real(B.ifft(fft_signal * fft_kernel))
+
+    # Real-kernel path: use rfft/irfft.
+    if kernel_is_fourier:
+        kernel_arr = B.asarray(kernel)
+        expected_half = n // 2 + 1
+        if kernel_arr.size == expected_half:
+            rfft_kernel = kernel_arr
+        elif kernel_arr.size == n:
+            # Legacy: full-size real Fourier response — the first half is
+            # the non-redundant rfft packing for Hermitian-symmetric data.
+            rfft_kernel = kernel_arr[:expected_half]
+        else:
+            raise ValueError(
+                "Fourier-space kernel size must be N or N//2+1 to match signal "
+                f"length {n}, got {kernel_arr.size}."
+            )
     else:
-        kernel = B.asarray(kernel)
-        # Shift kernel so zero-lag is at index 0 (required for FFT convolution)
-        fft_kernel = B.fft(B.ifftshift(kernel))
+        kernel_arr = B.asarray(kernel)
+        if kernel_arr.size != n:
+            raise ValueError(
+                "Signal and kernel must have the same length for periodic convolution."
+            )
+        rfft_kernel = B.rfft(B.ifftshift(kernel_arr))
 
-    if signal.size != fft_kernel.size:
-        raise ValueError("Signal and kernel must have the same length for periodic convolution.")
+    rfft_signal = B.rfft(signal)
+    return B.irfft(rfft_signal * rfft_kernel, n=n)
 
-    fft_signal = B.fft(signal)
-    convolved = B.real(B.ifft(fft_signal * fft_kernel))
-    return convolved
 
 def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
     """
-    Performs periodic convolution of two N-D arrays using Fourier methods.
-    Both arrays must have the same shape.
+    Performs periodic convolution of two N-D arrays using rfftn/irfftn.
+
+    ND signals and kernels are always real in the scaleinvariance stack,
+    so the full complex fft path is never needed. Fourier-space kernels may
+    be supplied as either full-size or packed rfft half-size
+    (``shape[:-1] + (shape[-1]//2+1,)``).
 
     Parameters:
         signal (ndarray): Input signal array (N-D).
         kernel (ndarray): Convolution kernel array (N-D) or Fourier-space
             transfer function if *kernel_is_fourier* is True.
-        kernel_is_fourier (bool): If True, *kernel* is already in Fourier space
-            and will be used directly (no ifftshift/fftn).
+        kernel_is_fourier (bool): If True, *kernel* is already in Fourier space.
 
     Returns:
         ndarray: The result of the periodic convolution.
@@ -100,20 +163,33 @@ def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
         ValueError: If signal and kernel shapes do not match.
     """
     signal = B.asarray(signal)
+    shape = signal.shape
+    expected_half_shape = shape[:-1] + (shape[-1] // 2 + 1,)
 
+    kernel_arr = B.asarray(kernel)
     if kernel_is_fourier:
-        fft_kernel = kernel
+        if kernel_arr.shape == expected_half_shape:
+            rfftn_kernel = kernel_arr
+        elif kernel_arr.shape == shape:
+            # Legacy full-size real Fourier response → take rfft packing.
+            slices = tuple(slice(None) for _ in range(len(shape) - 1)) + (
+                slice(None, shape[-1] // 2 + 1),
+            )
+            rfftn_kernel = kernel_arr[slices]
+        else:
+            raise ValueError(
+                f"Fourier-space kernel shape {kernel_arr.shape} must be "
+                f"{shape} (full) or {expected_half_shape} (rfft) to match signal."
+            )
     else:
-        kernel = B.asarray(kernel)
-        # Shift kernel so zero-lag is at index (0,0,...,0) (required for FFT convolution)
-        fft_kernel = B.fftn(B.ifftshift(kernel))
+        if kernel_arr.shape != shape:
+            raise ValueError(
+                "Signal and kernel must have the same shape for periodic convolution."
+            )
+        rfftn_kernel = B.rfftn(B.ifftshift(kernel_arr))
 
-    if signal.shape != fft_kernel.shape:
-        raise ValueError("Signal and kernel must have the same shape for periodic convolution.")
-
-    fft_signal = B.fftn(signal)
-    convolved = B.real(B.ifftn(fft_signal * fft_kernel))
-    return convolved
+    rfftn_signal = B.rfftn(signal)
+    return B.irfftn(rfftn_signal * rfftn_kernel, s=shape)
 
 
 def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable):
@@ -303,7 +379,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
 
     scaled = integrated * ((causality_factor * C1) ** (1/alpha))
     del integrated
-    flux = B.exp(scaled)
+    flux = _clip_and_exp_flux(scaled, "FIF_1D")
     del scaled
 
     if H == 0:
@@ -313,42 +389,43 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         flux = flux / B.mean(flux)
         return flux
 
-    # Create H kernel (kernel 2)
-    # Calculate exponent and normalization parameters for H kernel
-    H_exponent = -1.0 + H
-    H_norm_ratio_exp = -H
+    # Observable kernel (kernel 2) real-space power-law parameters.
+    # obs_kernel_exponent is the exponent of |r|^p in the real-space kernel;
+    # obs_kernel_norm_ratio_exp is the exponent used in the LS2010 ratio
+    # normalization. Both are derived from the Hurst exponent H.
+    obs_kernel_exponent = -1.0 + H
+    obs_kernel_norm_ratio_exp = -H
 
-    kernel2_is_fourier = False
-    if kernel_construction_method_observable == 'LS2010':
-        kernel2 = create_kernel_LS2010(size, H_exponent, H_norm_ratio_exp,
-                                      causal=causal, outer_scale=outer_scale,
-                                      outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=None)
-    elif kernel_construction_method_observable == 'spectral':
+    if kernel_construction_method_observable == 'spectral':
         if causal:
             raise ValueError("Spectral observable kernels do not support causal mode. "
                              "Use kernel_construction_method_observable='LS2010' with causal=True.")
-        kernel2 = create_kernel_spectral(size, H_exponent, causal=False, outer_scale=outer_scale,
-                                        outer_scale_width_factor=outer_scale_width_factor,
-                                        final_power=None)
-        kernel2_is_fourier = True
-    elif kernel_construction_method_observable == 'naive':
-        kernel2 = create_kernel_naive(size, H_exponent, causal=causal, outer_scale=outer_scale,
-                                     outer_scale_width_factor=outer_scale_width_factor)
-    elif kernel_construction_method_observable == 'spectral_odd':
-        if causal:
-            raise ValueError("Spectral odd observable kernels do not support causal mode. "
-                             "Use kernel_construction_method_observable='LS2010' with causal=True.")
-        kernel2 = create_kernel_spectral_odd(size, H_exponent, causal=False, outer_scale=outer_scale,
-                                             outer_scale_width_factor=outer_scale_width_factor)
-        kernel2_is_fourier = True
+        observable = fractional_integral_spectral(flux, H, outer_scale=outer_scale)
+        del flux
     else:
-        raise ValueError(f"Unknown kernel_construction_method_observable: {kernel_construction_method_observable}")
+        if kernel_construction_method_observable == 'LS2010':
+            kernel2 = create_kernel_LS2010(size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
+                                          causal=causal, outer_scale=outer_scale,
+                                          outer_scale_width_factor=outer_scale_width_factor,
+                                          final_power=None)
+        elif kernel_construction_method_observable == 'naive':
+            kernel2 = create_kernel_naive(size, obs_kernel_exponent, causal=causal, outer_scale=outer_scale,
+                                         outer_scale_width_factor=outer_scale_width_factor)
+        elif kernel_construction_method_observable == 'spectral_odd':
+            if causal:
+                raise ValueError("Spectral odd observable kernels do not support causal mode. "
+                                 "Use kernel_construction_method_observable='LS2010' with causal=True.")
+            kernel2 = create_kernel_spectral_odd(size, obs_kernel_exponent, causal=False, outer_scale=outer_scale,
+                                                 outer_scale_width_factor=outer_scale_width_factor)
+        else:
+            raise ValueError(f"Unknown kernel_construction_method_observable: {kernel_construction_method_observable}")
 
-    observable = periodic_convolve(flux, kernel2, kernel_is_fourier=kernel2_is_fourier)
+        kernel2_is_fourier = kernel_construction_method_observable == 'spectral_odd'
+        observable = periodic_convolve(flux, kernel2, kernel_is_fourier=kernel2_is_fourier)
+        del flux, kernel2
+
     if not periodic:
         observable = observable[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
-    del flux, kernel2
 
     if H_int == -1:
         # Apply differencing for H<0
@@ -521,6 +598,12 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                 f"For periodic={periodic}, with size={output_size}, the simulation domain is "
                 f"{sim_size} (doubled along non-periodic axes)."
             )
+        # The metric is raised to a negative power inside the LS2010 kernel
+        # construction, so zeros or negatives produce inf/nan silently.
+        if not np.all(np.isfinite(scale_metric)) or (scale_metric <= 0).any():
+            raise ValueError(
+                "scale_metric must be finite and strictly positive everywhere"
+            )
 
     # Set dimension for scaling exponents (defaults to spatial dimension)
     if scale_metric_dim is None:
@@ -591,11 +674,12 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
 
     # Perform first convolution
     integrated = periodic_convolve_nd(noise, kernel1)
+    del noise, kernel1
 
     # Scale and exponentiate to get flux
     scaled = integrated * (C1 ** (1/alpha))
     del integrated
-    flux = B.exp(scaled)
+    flux = _clip_and_exp_flux(scaled, "FIF_ND")
     del scaled
 
     if H == 0:
@@ -603,30 +687,26 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         flux = flux[output_slices]
         return flux / B.mean(flux)
 
-    # Create H kernel (kernel 2)
-    # Calculate exponent and normalization parameters for N-D H kernel
-    H_exponent = -scale_metric_dim + H
-    H_norm_ratio_exp = -H
+    # Observable kernel (kernel 2) real-space power-law parameters, derived
+    # from the Hurst exponent H and the scaling dimension.
+    obs_kernel_exponent = -scale_metric_dim + H
+    obs_kernel_norm_ratio_exp = -H
 
-    kernel2_is_fourier = False
-    if kernel_construction_method_observable == 'LS2010':
-        kernel2 = create_kernel_LS2010(sim_size, H_exponent, H_norm_ratio_exp,
-                                      causal=False, outer_scale=outer_scale,
-                                      outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=None, scale_metric=scale_metric)
-    elif kernel_construction_method_observable == 'spectral':
+    if kernel_construction_method_observable == 'spectral':
         if scale_metric is not None:
             raise ValueError("Spectral observable kernels do not support custom scale_metric. "
                              "Use kernel_construction_method_observable='LS2010' with scale_metric.")
-        kernel2 = create_kernel_spectral(sim_size, H_exponent, causal=False, outer_scale=outer_scale,
-                                        outer_scale_width_factor=outer_scale_width_factor,
-                                        final_power=None, scaling_dimension=scale_metric_dim)
-        kernel2_is_fourier = True
+        observable = fractional_integral_spectral(flux, H, outer_scale=outer_scale)
+        del flux
+    elif kernel_construction_method_observable == 'LS2010':
+        kernel2 = create_kernel_LS2010(sim_size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
+                                      causal=False, outer_scale=outer_scale,
+                                      outer_scale_width_factor=outer_scale_width_factor,
+                                      final_power=None, scale_metric=scale_metric)
+        observable = periodic_convolve_nd(flux, kernel2)
+        del flux, kernel2
     else:
         raise ValueError(f"Unknown kernel_construction_method_observable for N-D: {kernel_construction_method_observable}")
-
-    # Perform second convolution
-    observable = periodic_convolve_nd(flux, kernel2, kernel_is_fourier=kernel2_is_fourier)
 
     # Extract output based on per-axis periodicity, then normalize by mean of returned portion
     output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))

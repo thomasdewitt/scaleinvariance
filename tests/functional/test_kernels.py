@@ -16,6 +16,7 @@ from scaleinvariance.simulation.kernels import (
     create_kernel_spectral_odd,
 )
 from scaleinvariance.simulation.FIF import periodic_convolve, periodic_convolve_nd
+from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
 
 
 class TestKernelNaive:
@@ -134,7 +135,7 @@ class TestKernelSpectral:
 
     def test_shape_and_dtype(self):
         k = create_kernel_spectral(256, -0.3)
-        assert k.shape == (256,)
+        assert k.shape == (256 // 2 + 1,)
         assert k.dtype == np.float64
         assert not np.any(np.isnan(k))
 
@@ -151,7 +152,7 @@ class TestKernelSpectral:
 
     def test_nd_shape_and_dtype(self):
         kernel = create_kernel_spectral((32, 48), -1.7)
-        assert kernel.shape == (32, 48)
+        assert kernel.shape == (32, 48 // 2 + 1)
         assert not np.any(np.isnan(kernel))
 
     def test_nd_identity_for_zero_hurst_kernel(self):
@@ -196,16 +197,17 @@ class TestKernelSpectralOdd:
         """Odd kernel magnitude should match even spectral kernel magnitude (skip DC & Nyquist)."""
         size = 512
         exponent = -0.3
-        resp_even = create_kernel_spectral(size, exponent)
-        resp_odd = create_kernel_spectral_odd(size, exponent)
-        # Compare magnitudes directly (both are already in Fourier space)
+        resp_even = create_kernel_spectral(size, exponent)  # packed half (size//2+1,)
+        resp_odd = create_kernel_spectral_odd(size, exponent)  # full (size,), complex
+        # The even response is the packed rfft half; compare against the
+        # non-negative-frequency slice of the odd kernel's magnitude.
         mag_even = np.abs(resp_even)
-        mag_odd = np.abs(resp_odd)
-        # Skip index 0 (DC) and index size//2 (Nyquist) — both are 0 in odd kernel
-        mask = np.ones(size, dtype=bool)
+        mag_odd_half = np.abs(resp_odd[: size // 2 + 1])
+        # Skip DC (index 0) and Nyquist (last index of half) — both zero in odd kernel.
+        mask = np.ones(size // 2 + 1, dtype=bool)
         mask[0] = False
-        mask[size // 2] = False
-        np.testing.assert_allclose(mag_even[mask], mag_odd[mask], rtol=1e-10)
+        mask[-1] = False
+        np.testing.assert_allclose(mag_even[mask], mag_odd_half[mask], rtol=1e-10)
 
     def test_fif_1d_with_spectral_odd(self):
         """FIF_1D should run without error using spectral_odd observable kernel."""
@@ -252,3 +254,72 @@ class TestKernelConsistency:
             # Peak should be within 1 of center
             assert abs(peak_idx - size // 2) <= 1, \
                 f"{method} peak at {peak_idx}, expected near {size // 2}"
+
+
+class TestFractionalIntegralSpectral:
+    """Tests for fractional_integral_spectral."""
+
+    def test_identity_at_H_zero_1d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal(512)
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    def test_identity_at_H_zero_2d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal((64, 64))
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    def test_identity_at_H_zero_3d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal((16, 16, 16))
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    @pytest.mark.parametrize("H", [0.1, 0.3, 0.7])
+    def test_matches_legacy_spectral_path_1d(self, H):
+        """New fractional_integral_spectral should match create_kernel_spectral + periodic_convolve."""
+        rng = np.random.default_rng(123)
+        signal = rng.standard_normal(1024)
+        outer = 1024
+
+        new = fractional_integral_spectral(signal, H, outer_scale=outer)
+        old_kernel = create_kernel_spectral(1024, -1.0 + H, outer_scale=outer)
+        old = periodic_convolve(signal, old_kernel, kernel_is_fourier=True)
+
+        np.testing.assert_allclose(new, old, rtol=1e-12, atol=1e-12)
+
+    @pytest.mark.parametrize("H", [0.1, 0.5])
+    def test_matches_legacy_spectral_path_2d(self, H):
+        rng = np.random.default_rng(123)
+        signal = rng.standard_normal((128, 128))
+        outer = 128
+
+        new = fractional_integral_spectral(signal, H, outer_scale=outer)
+        old_kernel = create_kernel_spectral((128, 128), -2.0 + H, outer_scale=outer,
+                                            scaling_dimension=2.0)
+        old = periodic_convolve_nd(signal, old_kernel, kernel_is_fourier=True)
+
+        np.testing.assert_allclose(new, old, rtol=1e-12, atol=1e-12)
+
+    def test_matches_legacy_spectral_path_3d(self):
+        rng = np.random.default_rng(123)
+        signal = rng.standard_normal((32, 32, 32))
+        H = 0.4
+        outer = 32
+
+        new = fractional_integral_spectral(signal, H, outer_scale=outer)
+        old_kernel = create_kernel_spectral((32, 32, 32), -3.0 + H, outer_scale=outer,
+                                            scaling_dimension=3.0)
+        old = periodic_convolve_nd(signal, old_kernel, kernel_is_fourier=True)
+
+        np.testing.assert_allclose(new, old, rtol=1e-12, atol=1e-12)
+
+    def test_real_output(self):
+        """Output should be real-valued for a real input."""
+        rng = np.random.default_rng(7)
+        signal = rng.standard_normal(256)
+        out = fractional_integral_spectral(signal, H=0.3)
+        assert np.isrealobj(out)
+        assert not np.any(np.isnan(out))
