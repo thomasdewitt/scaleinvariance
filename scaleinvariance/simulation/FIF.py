@@ -148,12 +148,14 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
 
 def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
     """
-    Performs periodic convolution of two N-D arrays using rfftn/irfftn.
+    Performs periodic convolution of two N-D arrays using Fourier methods.
 
-    ND signals and kernels are always real in the scaleinvariance stack,
-    so the full complex fft path is never needed. Fourier-space kernels may
-    be supplied as either full-size or packed rfft half-size
-    (``shape[:-1] + (shape[-1]//2+1,)``).
+    Uses rfftn/irfftn for real kernels (halving the complex buffer). When
+    the kernel is a full-size complex Fourier-space array, falls back to
+    fftn/ifftn like the 1D version.
+
+    Fourier-space kernels may be supplied as either full-size or packed
+    rfft half-size (``shape[:-1] + (shape[-1]//2+1,)``).
 
     Parameters:
         signal (ndarray): Input signal array (N-D).
@@ -169,8 +171,19 @@ def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
     """
     signal = B.asarray(signal)
     shape = signal.shape
-    expected_half_shape = shape[:-1] + (shape[-1] // 2 + 1,)
 
+    # Full-size complex Fourier kernel: fall back to fftn/ifftn.
+    if kernel_is_fourier and np.iscomplexobj(kernel):
+        fft_kernel = kernel
+        if shape != fft_kernel.shape:
+            raise ValueError(
+                "Signal and kernel must have the same shape for periodic convolution."
+            )
+        fft_signal = B.fftn(signal)
+        return B.real(B.ifftn(fft_signal * fft_kernel))
+
+    # Real-kernel path: rfftn/irfftn.
+    expected_half_shape = shape[:-1] + (shape[-1] // 2 + 1,)
     kernel_arr = B.asarray(kernel)
     if kernel_is_fourier:
         if kernel_arr.shape == expected_half_shape:

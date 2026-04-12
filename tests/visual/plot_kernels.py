@@ -55,9 +55,9 @@ def main():
     # Build kernels
     k_naive = np.array(create_kernel_naive(size, exponent, causal=causal, outer_scale=outer_scale))
     k_ls2010 = np.array(create_kernel_LS2010(size, exponent, norm_ratio_exp, causal=causal, outer_scale=outer_scale))
-    # Spectral kernels return Fourier-space responses; IFFT to real space for plotting
+    # Spectral kernels return packed rfft half-spectrum; irfft to real space for plotting
     resp_spectral = create_kernel_spectral(size, exponent, causal=False, outer_scale=outer_scale)
-    k_spectral = np.fft.fftshift(np.real(np.fft.ifft(resp_spectral)))
+    k_spectral = np.fft.fftshift(np.fft.irfft(resp_spectral, n=size))
 
     # Odd kernel (non-causal only)
     resp_odd = create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=outer_scale)
