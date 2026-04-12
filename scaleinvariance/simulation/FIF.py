@@ -50,27 +50,33 @@ def extremal_levy(alpha, size=1):
         ndarray: Array of generated extremal Lévy random variables
     """
     phi = (B.rand(size) - 0.5) * B.pi
-    alpha_t = alpha
-    phi0 = -(B.pi/2) * (1 - B.abs(1 - alpha_t)) / alpha_t
     R = B.exponential(scale=1.0, size=size)
     eps = B.eps()
+
+    # Keep all alpha-dependent constants as Python floats — passing them
+    # through numpy scalar ops would produce float64 scalars that then
+    # promote the array results back to float64 under numpy's scalar
+    # promotion rules.
+    alpha_t = float(alpha)
+    phi0 = -(np.pi / 2.0) * (1.0 - abs(1.0 - alpha_t)) / alpha_t
+    abs_alpha1 = abs(alpha_t - 1.0)
+    if abs_alpha1 < eps:
+        abs_alpha1 = eps
+    sign_alpha_minus_1 = 1.0 if alpha_t > 1.0 else -1.0
+    inv_alpha_neg = -1.0 / alpha_t
+    pow_denom_R = (1.0 - alpha_t) / alpha_t
 
     # phi ∈ [-pi/2, pi/2] so cos(phi) ≥ 0; clip protects the negative-power
     # below against underflow (and floating-point drift at the endpoints).
     cos_phi = B.clip(B.cos(phi), eps, None)
-
-    abs_alpha1 = float(B.abs(alpha_t - 1))
-    if abs_alpha1 < eps:
-        abs_alpha1 = eps
-
     denom = B.clip(B.cos(phi - alpha_t * (phi - phi0)), eps, None)
     R = B.clip(R, eps, None)
 
     sample = (
-        B.sign(alpha_t - 1) *
-        B.sin(alpha_t * (phi - phi0)) *
-        (cos_phi * abs_alpha1) ** (-1/alpha_t) *
-        (denom / R) ** ((1 - alpha_t) / alpha_t)
+        sign_alpha_minus_1
+        * B.sin(alpha_t * (phi - phi0))
+        * (cos_phi * abs_alpha1) ** inv_alpha_neg
+        * (denom / R) ** pow_denom_R
     )
     del phi, cos_phi, denom, R
     return sample
