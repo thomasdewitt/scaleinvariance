@@ -43,7 +43,7 @@ def fBm_1D_circulant(size, H, periodic=True):
     power_half = B.abs(k_half) ** (-beta)
     del k_half
 
-    phases = B.rand(power_half.size) * 2 * B.pi
+    phases = B.rand(len(power_half)) * 2 * B.pi
     amplitude = B.sqrt(power_half)
     del power_half
 
@@ -69,7 +69,7 @@ def fBm_1D_circulant(size, H, periodic=True):
     if fBm_std > 1e-10:
         fBm = fBm / fBm_std
 
-    return fBm
+    return B.to_numpy(fBm)
 
 
 def fBm_ND_circulant(size, H, periodic=True):
@@ -129,7 +129,7 @@ def fBm_ND_circulant(size, H, periodic=True):
         else:
             axis = B.fftfreq(working_size[axis_idx], d=1.0) * 2 * B.pi
         broadcast_shape = [1] * ndim
-        broadcast_shape[axis_idx] = axis.size
+        broadcast_shape[axis_idx] = axis.shape[0]
         term = axis.reshape(broadcast_shape) ** 2
         if K_squared is None:
             K_squared = term
@@ -189,7 +189,7 @@ def fBm_ND_circulant(size, H, periodic=True):
     if fBm_std > 1e-10:
         fBm_ND = fBm_ND / fBm_std
 
-    return fBm_ND
+    return B.to_numpy(fBm_ND)
 
 
 def fBm_1D(size, H, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
@@ -284,7 +284,7 @@ def fBm_1D(size, H, causal=False, outer_scale=None, outer_scale_width_factor=2.0
         noise = B.randn(size)
     else:
         noise = B.asarray(gaussian_noise)
-        if noise.size != output_size:
+        if len(noise) != output_size:
             raise ValueError("Provided gaussian_noise must match the specified size.")
         if not periodic:
             noise = B.concatenate([noise, B.randn(output_size)])
@@ -334,4 +334,4 @@ def fBm_1D(size, H, causal=False, outer_scale=None, outer_scale_width_factor=2.0
     if result_std > 1e-10:
         result = result / result_std
 
-    return result
+    return B.to_numpy(result)

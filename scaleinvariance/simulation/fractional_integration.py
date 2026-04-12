@@ -47,7 +47,7 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
         else:
             axis = B.fftfreq(shape[axis_idx], d=1.0)
         broadcast_shape = [1] * ndim
-        broadcast_shape[axis_idx] = axis.size
+        broadcast_shape[axis_idx] = axis.shape[0]
         term = (axis.reshape(broadcast_shape)) ** 2
         if freqs_squared is None:
             # Promote to the half-spectrum shape via the + 0 trick on first add below
@@ -68,7 +68,7 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
     del freqs_regularized
 
     dc_index = (0,) * ndim
-    if kernel.size == 1:
+    if B.numel(kernel) == 1:
         kernel[dc_index] = 1.0
     else:
         neighbor_index = (1,) + (0,) * (ndim - 1)

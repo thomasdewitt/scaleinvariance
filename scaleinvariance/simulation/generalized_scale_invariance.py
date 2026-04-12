@@ -113,7 +113,7 @@ def canonical_scale_metric(size, ls, Hz=5/9):
     total_sq = None
     for axis_idx, axis in enumerate(coord_arrays):
         broadcast_shape = [1] * ndim
-        broadcast_shape[axis_idx] = axis.size
+        broadcast_shape[axis_idx] = axis.shape[0]
         reshaped = axis.reshape(broadcast_shape)
         if axis_idx == ndim - 1:
             term = (B.abs(reshaped) / ls) ** (2.0 / Hz)
@@ -127,4 +127,4 @@ def canonical_scale_metric(size, ls, Hz=5/9):
 
     metric = ls * B.sqrt(total_sq)
     del total_sq
-    return metric
+    return B.to_numpy(metric)

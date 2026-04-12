@@ -18,8 +18,7 @@ def _clip_and_exp_flux(scaled, caller_name):
     ceiling instead of silently saturating.
     """
     lo, hi = B.exp_clip_limits()
-    saturated = int(B.sum(B.asarray(scaled < lo).astype(int))) + \
-                int(B.sum(B.asarray(scaled > hi).astype(int)))
+    saturated = int(B.sum(scaled < lo)) + int(B.sum(scaled > hi))
     scaled_clipped = B.clip(scaled, lo, hi)
     flux = B.exp(scaled_clipped)
     if saturated > 0:
@@ -33,21 +32,8 @@ def _clip_and_exp_flux(scaled, caller_name):
     return flux
 
 
-def extremal_levy(alpha, size=1):
-    """
-    Generate random samples from an extremal Lévy distribution using a modified
-    Chambers–Mallows–Stuck method.
-
-    Translated from Mathematica code provided by Lovejoy:
-    https://www.physics.mcgill.ca/~gang/multifrac/multifractals/software.htm
-
-    Parameters:
-        alpha (float): Stability parameter in (0, 2)
-        size (int): Number of samples to generate (default is 1)
-
-    Returns:
-        ndarray: Array of generated extremal Lévy random variables
-    """
+def _extremal_levy_core(alpha, size=1):
+    """Core extremal Lévy generation. Returns native backend type (tensor or ndarray)."""
     phi = (B.rand(size) - 0.5) * B.pi
     R = B.exponential(scale=1.0, size=size)
     eps = B.eps()
@@ -80,6 +66,24 @@ def extremal_levy(alpha, size=1):
     del phi, cos_phi, denom, R
     return sample
 
+
+def extremal_levy(alpha, size=1):
+    """
+    Generate random samples from an extremal Lévy distribution using a modified
+    Chambers–Mallows–Stuck method.
+
+    Translated from Mathematica code provided by Lovejoy:
+    https://www.physics.mcgill.ca/~gang/multifrac/multifractals/software.htm
+
+    Parameters:
+        alpha (float): Stability parameter in (0, 2)
+        size (int): Number of samples to generate (default is 1)
+
+    Returns:
+        numpy.ndarray: Array of generated extremal Lévy random variables
+    """
+    return B.to_numpy(_extremal_levy_core(alpha, size))
+
 # Convolutions
 def periodic_convolve(signal, kernel, kernel_is_fourier=False):
     """
@@ -107,12 +111,12 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
         ValueError: If signal and kernel lengths do not match.
     """
     signal = B.asarray(signal)
-    n = signal.size
+    n = len(signal)
 
     # Full-size complex Fourier kernel (e.g. spectral_odd): fall back to fft.
-    if kernel_is_fourier and np.iscomplexobj(kernel):
+    if kernel_is_fourier and B.iscomplexobj(kernel):
         fft_kernel = kernel
-        if n != fft_kernel.size:
+        if n != len(fft_kernel):
             raise ValueError(
                 "Signal and kernel must have the same length for periodic convolution."
             )
@@ -123,20 +127,20 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
     if kernel_is_fourier:
         kernel_arr = B.asarray(kernel)
         expected_half = n // 2 + 1
-        if kernel_arr.size == expected_half:
+        if len(kernel_arr) == expected_half:
             rfft_kernel = kernel_arr
-        elif kernel_arr.size == n:
+        elif len(kernel_arr) == n:
             # Legacy: full-size real Fourier response — the first half is
             # the non-redundant rfft packing for Hermitian-symmetric data.
             rfft_kernel = kernel_arr[:expected_half]
         else:
             raise ValueError(
                 "Fourier-space kernel size must be N or N//2+1 to match signal "
-                f"length {n}, got {kernel_arr.size}."
+                f"length {n}, got {len(kernel_arr)}."
             )
     else:
         kernel_arr = B.asarray(kernel)
-        if kernel_arr.size != n:
+        if len(kernel_arr) != n:
             raise ValueError(
                 "Signal and kernel must have the same length for periodic convolution."
             )
@@ -173,7 +177,7 @@ def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
     shape = signal.shape
 
     # Full-size complex Fourier kernel: fall back to fftn/ifftn.
-    if kernel_is_fourier and np.iscomplexobj(kernel):
+    if kernel_is_fourier and B.iscomplexobj(kernel):
         fft_kernel = kernel
         if shape != fft_kernel.shape:
             raise ValueError(
@@ -324,7 +328,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         if levy_noise is not None:
             raise ValueError('noise argument not supported for C1=0')
         result = fBm_1D_circulant(output_size, H, periodic=periodic)
-        return result
+        return B.to_numpy(result)
 
     if not isinstance(C1, (int, float)) or C1 < 0:
         raise ValueError("C1 must be a non-negative number.")
@@ -353,14 +357,14 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable)
 
     if levy_noise is None:
-        noise = extremal_levy(alpha, size=size)
+        noise = _extremal_levy_core(alpha, size=size)
     else:
         levy_noise_arr = B.asarray(levy_noise)
-        if levy_noise_arr.size != output_size:
+        if B.numel(levy_noise_arr) != output_size:
             raise ValueError("Provided levy_noise must match the specified size.")
         # if aperiodic is requested, need to pad noise with more noise
         if not periodic:
-            noise = B.concatenate([levy_noise_arr, extremal_levy(alpha, size=output_size)])
+            noise = B.concatenate([levy_noise_arr, _extremal_levy_core(alpha, size=output_size)])
         else:
             noise = levy_noise_arr
     if outer_scale is None:
@@ -405,7 +409,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         if not periodic:
             flux = flux[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
         flux = flux / B.mean(flux)
-        return flux
+        return B.to_numpy(flux)
 
     # Observable kernel (kernel 2) real-space power-law parameters.
     # obs_kernel_exponent is the exponent of |r|^p in the real-space kernel;
@@ -461,7 +465,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         # Normalize to unit mean (levels should have unit mean)
         observable = observable / B.mean(observable)
 
-    return observable
+    return B.to_numpy(observable)
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method_flux='LS2010', kernel_construction_method_observable='spectral',
@@ -618,7 +622,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
             )
         # The metric is raised to a negative power inside the LS2010 kernel
         # construction, so zeros or negatives produce inf/nan silently.
-        if not np.all(np.isfinite(scale_metric)) or (scale_metric <= 0).any():
+        if not B.all(B.asarray(np.isfinite(B.to_numpy(scale_metric)))) or B.any(scale_metric <= 0):
             raise ValueError(
                 "scale_metric must be finite and strictly positive everywhere"
             )
@@ -633,7 +637,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     if C1 == 0:
         if levy_noise is not None:
             raise ValueError('levy_noise argument not supported for C1=0 (fBm shortcut)')
-        return fBm_ND_circulant(output_size, H, periodic=periodic_tuple)
+        return B.to_numpy(fBm_ND_circulant(output_size, H, periodic=periodic_tuple))
 
     if outer_scale is None:
         outer_scale = max(sim_size)
@@ -659,7 +663,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Generate or validate Lévy noise
     if levy_noise is None:
         total_size = np.prod(sim_size)
-        noise = extremal_levy(alpha, size=total_size).reshape(sim_size)
+        noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
     else:
         levy_tensor = B.asarray(levy_noise)
         if all(periodic_tuple):
@@ -670,7 +674,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
             if levy_tensor.shape != output_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
             total_size = np.prod(sim_size)
-            noise = extremal_levy(alpha, size=total_size).reshape(sim_size)
+            noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
             # Insert provided noise at the beginning
             noise[tuple(slice(s) for s in output_size)] = levy_tensor
 
@@ -703,7 +707,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     if H == 0:
         output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
         flux = flux[output_slices]
-        return flux / B.mean(flux)
+        return B.to_numpy(flux / B.mean(flux))
 
     # Observable kernel (kernel 2) real-space power-law parameters, derived
     # from the Hurst exponent H and the scaling dimension.
@@ -730,4 +734,4 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
     observable = observable[output_slices]
     observable = observable / B.mean(observable)
-    return observable
+    return B.to_numpy(observable)

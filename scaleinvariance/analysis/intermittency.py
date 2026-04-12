@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 
+from .. import backend as B
 from .structure_function import structure_function_analysis
 from .haar_fluctuation import haar_fluctuation_analysis
 from ..utils import estimate_hurst_from_scaling

@@ -1,13 +1,14 @@
 import numpy as np
 import warnings
 
+from .. import backend as B
 from ..utils import estimate_hurst_from_scaling
 
 
 def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, axis=0):
     """
     Compute binned power spectral density for data along specified axis.
-    
+
     Parameters
     ----------
     data : array-like
@@ -20,15 +21,15 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
         Number of logarithmic bins for PSD (default: 50)
     axis : int, optional
         Axis along which to compute FFT (default: 0)
-        
+
     Returns
     -------
     tuple (np.ndarray, np.ndarray)
         binned_freq : 1-D array of binned frequencies
         binned_psd : 1-D array of binned power spectral density values
     """
-    data = np.asarray(data)
-    if data.size == 0:
+    data = B.asarray(data)
+    if B.numel(data) == 0:
         raise ValueError("Input data must not be empty")
     if axis >= data.ndim or axis < -data.ndim:
         raise ValueError(f"axis {axis} is out of bounds for array with {data.ndim} dimensions")
@@ -38,18 +39,23 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
         raise ValueError("min_wavelength must be positive")
     if min_wavelength is not None and max_wavelength is not None and min_wavelength >= max_wavelength:
         raise ValueError(f"min_wavelength ({min_wavelength}) must be less than max_wavelength ({max_wavelength})")
-        
+
     n = data.shape[axis]
     # Compute the one-sided FFT and corresponding power spectral density along specified axis
-    fft_vals = np.fft.rfft(data, axis=axis)
-    psd = np.abs(fft_vals)**2 / n
-    
+    fft_vals = B.rfft(data, axis=axis)
+    psd = B.abs_squared(fft_vals) / n
+    del fft_vals
+
     # Average PSD across other dimensions
     avg_axes = tuple(i for i in range(data.ndim) if i != axis)
     if avg_axes:
-        psd = np.mean(psd, axis=avg_axes)
-    
-    freqs = np.fft.rfftfreq(n, d=1)  # assuming unit spacing
+        psd = B.mean(psd, axis=avg_axes)
+
+    freqs = B.rfftfreq(n, d=1)  # assuming unit spacing
+
+    # Convert to numpy for the binning loop (small arrays, ~50 bins)
+    freqs = B.to_numpy(freqs)
+    psd = B.to_numpy(psd)
 
     # Filter frequencies based on wavelength constraints
     if max_wavelength is not None:
@@ -66,7 +72,7 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
 
     # Create logarithmic bins
     bins = np.logspace(np.log10(f_valid.min()), np.log10(f_valid.max()), nbins + 1, dtype=np.float64)
-    
+
     # Bin the data
     binned_freq = []
     binned_psd = []
@@ -82,10 +88,10 @@ def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, 
 def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axis=0, return_fit=False):
     """
     Estimate the Hurst exponent from the power spectral density along specified axis.
-    
+
     For fractional Brownian motion, PSD ~ f^(-β) with β = 2H + 1.
     This function estimates H by performing linear regression on log(PSD) vs log(frequency).
-    
+
     Parameters
     ----------
     data : array-like
@@ -93,7 +99,7 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
     max_wavelength : float, optional
         Maximum wavelength to include in analysis. If None, defaults to domain_size/8
         or domain_size if domain_size < 512 (with warning).
-    min_wavelength : float, optional  
+    min_wavelength : float, optional
         Minimum wavelength to include in analysis. If None, defaults to 4*Nyquist
         or Nyquist if domain_size < 512.
     nbins : int, optional
@@ -102,7 +108,7 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
         Axis along which to compute FFT (default: 0)
     return_fit : bool, optional
         If True, return frequencies, PSD values, and fitted line
-        
+
     Returns
     -------
     If return_fit is False:
@@ -122,17 +128,17 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
         fit_line : np.ndarray
             The fitted line used to estimate H
     """
-    data = np.asarray(data)
+    data = B.asarray(data)
     array_size = data.shape[axis]
-    
+
     # Check minimum array size for reliable Hurst estimation
     if array_size < 16:
         raise ValueError(f"Array size along axis {axis} is {array_size}, but minimum 16 points required for Hurst estimation")
-    
+
     # Set default wavelengths to isolate scaling range >> grid size and << domain size
     domain_size = array_size  # In grid units
     nyquist_wavelength = 2    # Nyquist wavelength in grid units
-    
+
     if max_wavelength is None:
         if array_size <= 512:
             max_wavelength = domain_size
@@ -141,30 +147,30 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
                          UserWarning)
         else:
             max_wavelength = domain_size / 8
-    
+
     if min_wavelength is None:
         if array_size <= 512:
             min_wavelength = nyquist_wavelength
         else:
             min_wavelength = 4 * nyquist_wavelength
-    
+
     # Compute binned power spectral density
     binned_freq, binned_psd = spectral_analysis(data, max_wavelength, min_wavelength, nbins, axis)
-    
+
     if len(binned_freq) < 2:
         raise ValueError("Not enough frequency bins for Hurst estimation")
-    
+
     # For fBm: PSD ~ f^(-β) where β = 2H + 1
     # So H = ((-slope) - 1) / 2
     # We use the common regression utility, then transform the slope
     slope, slope_err, freqs_fit, psd_fit, fit_line = estimate_hurst_from_scaling(
         binned_freq, binned_psd, return_fit=True
     )
-    
+
     # Transform slope to Hurst exponent: H = ((-slope) - 1) / 2
     H = ((-slope) - 1) / 2
     H_uncertainty = slope_err / 2  # Error propagation
-    
+
     if return_fit:
         return H, H_uncertainty, freqs_fit, psd_fit, fit_line
     else:

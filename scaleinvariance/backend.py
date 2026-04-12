@@ -2,7 +2,10 @@
 Backend module for scaleinvariance - provides unified numpy/torch interface.
 
 Automatically detects PyTorch availability and provides wrapper functions
-that work with either numpy or torch. All functions return numpy arrays.
+that work with either numpy or torch. When ``backend='numpy'``, all functions
+return numpy arrays. When ``backend='torch'``, functions return native torch
+tensors (on the active device); call :func:`to_numpy` at public API boundaries
+to convert back.
 
 Numerical precision is controlled by ``set_numerical_precision('float32'|'float64')``
 and applies to both numpy and torch backends. The default is ``'float64'``.
@@ -14,6 +17,7 @@ import os
 # Try to import torch
 try:
     import torch
+    import torch.nn.functional as F
     _torch_available = True
 except ImportError:
     _torch_available = False
@@ -22,6 +26,8 @@ except ImportError:
 _backend = 'numpy'  # Default backend
 _num_threads = int(os.cpu_count() * 0.9) if os.cpu_count() else 4
 _numerical_precision = 'float64'  # Default precision
+_device = 'cpu'
+_device_obj = torch.device('cpu') if _torch_available else None
 
 # Auto-detect torch if available
 if _torch_available:
@@ -117,6 +123,38 @@ def get_numerical_precision():
     return _numerical_precision
 
 
+def set_device(device='cpu'):
+    """Set torch compute device.
+
+    Only meaningful when ``backend='torch'``. When ``backend='numpy'``,
+    the device setting is stored but has no effect.
+
+    Parameters
+    ----------
+    device : str
+        Device string: ``'cpu'``, ``'cuda'``, ``'cuda:0'``, etc.
+
+    Raises
+    ------
+    RuntimeError
+        If CUDA is requested but not available.
+    """
+    global _device, _device_obj
+    if device != 'cpu' and _torch_available:
+        if 'cuda' in device and not torch.cuda.is_available():
+            raise RuntimeError(
+                f"Device '{device}' requested but CUDA is not available."
+            )
+    _device = device
+    if _torch_available:
+        _device_obj = torch.device(device)
+
+
+def get_device():
+    """Get current device string."""
+    return _device
+
+
 # ============================================================================
 # Dtype helpers
 # ============================================================================
@@ -141,14 +179,20 @@ def _active_complex_dtype_torch():
     return torch.complex64 if _numerical_precision == 'float32' else torch.complex128
 
 
-def _np_to_torch_dtype(dtype):
-    """Map a numpy dtype to the corresponding torch dtype.
+def _to_torch_dtype(dtype):
+    """Map a dtype to the corresponding torch dtype.
 
-    Returns the active real torch dtype for unrecognized inputs.
+    Accepts numpy dtypes, torch dtypes, and None. Returns the active real
+    torch dtype for None or unrecognized inputs.
     """
     if dtype is None:
         return _active_real_dtype_torch()
-    key = np.dtype(dtype).type
+    if _torch_available and isinstance(dtype, torch.dtype):
+        return dtype
+    try:
+        key = np.dtype(dtype).type
+    except TypeError:
+        return _active_real_dtype_torch()
     if key is np.float32:
         return torch.float32
     if key is np.float64:
@@ -161,7 +205,45 @@ def _np_to_torch_dtype(dtype):
         return torch.complex64
     if key is np.complex128:
         return torch.complex128
+    if key is np.bool_:
+        return torch.bool
     return _active_real_dtype_torch()
+
+
+# Keep old name as internal alias
+_np_to_torch_dtype = _to_torch_dtype
+
+
+def _to_torch(x, dtype=None):
+    """Convert input to a torch tensor on the active device.
+
+    If *x* is already a tensor with the correct dtype and device, this is
+    close to a no-op. Numpy arrays on CPU share memory via ``as_tensor``.
+    """
+    if isinstance(x, torch.Tensor):
+        target_dtype = dtype if dtype is not None else x.dtype
+        if x.dtype != target_dtype or x.device != _device_obj:
+            return x.to(dtype=target_dtype, device=_device_obj)
+        return x
+    if dtype is not None:
+        return torch.as_tensor(x, dtype=dtype).to(device=_device_obj)
+    return torch.as_tensor(x).to(device=_device_obj)
+
+
+def to_numpy(x):
+    """Convert to numpy array. Call at public API boundaries.
+
+    No-op if already a numpy array. For torch tensors, handles both
+    CPU (zero-copy) and GPU (transfer + copy) cases.
+    """
+    if isinstance(x, np.ndarray):
+        return x
+    if _torch_available and isinstance(x, torch.Tensor):
+        t = x.detach()
+        if t.device.type != 'cpu':
+            t = t.cpu()
+        return t.numpy()
+    return np.asarray(x)
 
 
 def exp_clip_limits():
@@ -193,8 +275,8 @@ def fftfreq(n, d=1.0):
     if _backend == 'numpy':
         return np.fft.fftfreq(n, d=d).astype(_active_real_dtype_np(), copy=False)
     else:
-        result = torch.fft.fftfreq(n, d=d, dtype=_active_real_dtype_torch())
-        return result.numpy()
+        return torch.fft.fftfreq(n, d=d, dtype=_active_real_dtype_torch(),
+                                 device=_device_obj)
 
 
 def rfftfreq(n, d=1.0):
@@ -202,8 +284,8 @@ def rfftfreq(n, d=1.0):
     if _backend == 'numpy':
         return np.fft.rfftfreq(n, d=d).astype(_active_real_dtype_np(), copy=False)
     else:
-        result = torch.fft.rfftfreq(n, d=d, dtype=_active_real_dtype_torch())
-        return result.numpy()
+        return torch.fft.rfftfreq(n, d=d, dtype=_active_real_dtype_torch(),
+                                  device=_device_obj)
 
 
 def fft(x, axis=-1):
@@ -211,9 +293,7 @@ def fft(x, axis=-1):
     if _backend == 'numpy':
         return np.fft.fft(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.fft(x_torch, dim=axis)
-        return result.numpy()
+        return torch.fft.fft(_to_torch(x, _active_complex_dtype_torch()), dim=axis)
 
 
 def ifft(x, axis=-1):
@@ -221,9 +301,7 @@ def ifft(x, axis=-1):
     if _backend == 'numpy':
         return np.fft.ifft(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.ifft(x_torch, dim=axis)
-        return result.numpy()
+        return torch.fft.ifft(_to_torch(x, _active_complex_dtype_torch()), dim=axis)
 
 
 def fft2(x):
@@ -231,9 +309,7 @@ def fft2(x):
     if _backend == 'numpy':
         return np.fft.fft2(x)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.fft2(x_torch)
-        return result.numpy()
+        return torch.fft.fft2(_to_torch(x, _active_complex_dtype_torch()))
 
 
 def ifft2(x):
@@ -241,9 +317,7 @@ def ifft2(x):
     if _backend == 'numpy':
         return np.fft.ifft2(x)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.ifft2(x_torch)
-        return result.numpy()
+        return torch.fft.ifft2(_to_torch(x, _active_complex_dtype_torch()))
 
 
 def fftn(x, axes=None):
@@ -251,9 +325,7 @@ def fftn(x, axes=None):
     if _backend == 'numpy':
         return np.fft.fftn(x, axes=axes)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.fftn(x_torch, dim=axes)
-        return result.numpy()
+        return torch.fft.fftn(_to_torch(x, _active_complex_dtype_torch()), dim=axes)
 
 
 def ifftn(x, axes=None):
@@ -261,9 +333,7 @@ def ifftn(x, axes=None):
     if _backend == 'numpy':
         return np.fft.ifftn(x, axes=axes)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.ifftn(x_torch, dim=axes)
-        return result.numpy()
+        return torch.fft.ifftn(_to_torch(x, _active_complex_dtype_torch()), dim=axes)
 
 
 def rfft(x, axis=-1):
@@ -271,9 +341,7 @@ def rfft(x, axis=-1):
     if _backend == 'numpy':
         return np.fft.rfft(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_real_dtype_torch())
-        result = torch.fft.rfft(x_torch, dim=axis)
-        return result.numpy()
+        return torch.fft.rfft(_to_torch(x, _active_real_dtype_torch()), dim=axis)
 
 
 def irfft(x, n, axis=-1):
@@ -281,9 +349,8 @@ def irfft(x, n, axis=-1):
     if _backend == 'numpy':
         return np.fft.irfft(x, n=n, axis=axis)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.irfft(x_torch, n=n, dim=axis)
-        return result.numpy()
+        return torch.fft.irfft(_to_torch(x, _active_complex_dtype_torch()),
+                               n=n, dim=axis)
 
 
 def rfftn(x, axes=None):
@@ -291,9 +358,7 @@ def rfftn(x, axes=None):
     if _backend == 'numpy':
         return np.fft.rfftn(x, axes=axes)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_real_dtype_torch())
-        result = torch.fft.rfftn(x_torch, dim=axes)
-        return result.numpy()
+        return torch.fft.rfftn(_to_torch(x, _active_real_dtype_torch()), dim=axes)
 
 
 def irfft2(x, s):
@@ -301,9 +366,7 @@ def irfft2(x, s):
     if _backend == 'numpy':
         return np.fft.irfft2(x, s=s)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.irfft2(x_torch, s=s)
-        return result.numpy()
+        return torch.fft.irfft2(_to_torch(x, _active_complex_dtype_torch()), s=s)
 
 
 def irfftn(x, s):
@@ -312,9 +375,8 @@ def irfftn(x, s):
     if _backend == 'numpy':
         return np.fft.irfftn(x, s=s, axes=axes)
     else:
-        x_torch = torch.as_tensor(x, dtype=_active_complex_dtype_torch())
-        result = torch.fft.irfftn(x_torch, s=s, dim=axes)
-        return result.numpy()
+        return torch.fft.irfftn(_to_torch(x, _active_complex_dtype_torch()),
+                                s=s, dim=axes)
 
 
 def ifftshift(x, axes=None):
@@ -322,9 +384,7 @@ def ifftshift(x, axes=None):
     if _backend == 'numpy':
         return np.fft.ifftshift(x, axes=axes)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.fft.ifftshift(x_torch, dim=axes)
-        return result.numpy()
+        return torch.fft.ifftshift(_to_torch(x), dim=axes)
 
 
 # ============================================================================
@@ -333,28 +393,28 @@ def ifftshift(x, axes=None):
 
 def randn(*shape):
     """Standard normal random numbers at the active real precision."""
-    target = _active_real_dtype_np()
     if _backend == 'numpy':
+        target = _active_real_dtype_np()
         result = np.random.randn(*shape)
         if result.dtype != target:
             result = result.astype(target, copy=False)
         return result
     else:
-        result = torch.randn(*shape, dtype=_active_real_dtype_torch())
-        return result.numpy()
+        return torch.randn(*shape, dtype=_active_real_dtype_torch(),
+                           device=_device_obj)
 
 
 def rand(*shape):
     """Uniform random numbers [0, 1) at the active real precision."""
-    target = _active_real_dtype_np()
     if _backend == 'numpy':
+        target = _active_real_dtype_np()
         result = np.random.rand(*shape)
         if result.dtype != target:
             result = result.astype(target, copy=False)
         return result
     else:
-        result = torch.rand(*shape, dtype=_active_real_dtype_torch())
-        return result.numpy()
+        return torch.rand(*shape, dtype=_active_real_dtype_torch(),
+                          device=_device_obj)
 
 
 def exponential(scale, size=None):
@@ -368,8 +428,8 @@ def exponential(scale, size=None):
     size : int or tuple, optional
         Output shape
     """
-    target = _active_real_dtype_np()
     if _backend == 'numpy':
+        target = _active_real_dtype_np()
         if size is None:
             result = np.asarray(np.random.exponential(scale))
         else:
@@ -380,10 +440,10 @@ def exponential(scale, size=None):
     else:
         if size is None:
             size = 1
-        rate = torch.tensor(1.0 / scale, dtype=_active_real_dtype_torch())
+        rate = torch.tensor(1.0 / scale, dtype=_active_real_dtype_torch(),
+                            device=_device_obj)
         dist = torch.distributions.Exponential(rate)
-        result = dist.sample(size if isinstance(size, tuple) else (size,))
-        return result.numpy()
+        return dist.sample(size if isinstance(size, tuple) else (size,))
 
 
 # ============================================================================
@@ -392,41 +452,62 @@ def exponential(scale, size=None):
 
 def zeros(shape, dtype=None):
     """Create zero array. Defaults to active real dtype."""
-    if dtype is None:
-        dtype = _active_real_dtype_np()
     if _backend == 'numpy':
+        if dtype is None:
+            dtype = _active_real_dtype_np()
         return np.zeros(shape, dtype=dtype)
     else:
-        torch_dtype = _np_to_torch_dtype(dtype)
-        result = torch.zeros(shape, dtype=torch_dtype)
-        return result.numpy()
+        torch_dtype = _to_torch_dtype(dtype)
+        return torch.zeros(shape, dtype=torch_dtype, device=_device_obj)
 
 
 def ones(shape, dtype=None):
     """Create ones array. Defaults to active real dtype."""
-    if dtype is None:
-        dtype = _active_real_dtype_np()
     if _backend == 'numpy':
+        if dtype is None:
+            dtype = _active_real_dtype_np()
         return np.ones(shape, dtype=dtype)
     else:
-        torch_dtype = _np_to_torch_dtype(dtype)
-        result = torch.ones(shape, dtype=torch_dtype)
-        return result.numpy()
+        torch_dtype = _to_torch_dtype(dtype)
+        return torch.ones(shape, dtype=torch_dtype, device=_device_obj)
+
+
+def empty(shape, dtype=None):
+    """Create uninitialized array. Defaults to active real dtype."""
+    if _backend == 'numpy':
+        if dtype is None:
+            dtype = _active_real_dtype_np()
+        return np.empty(shape, dtype=dtype)
+    else:
+        torch_dtype = _to_torch_dtype(dtype)
+        return torch.empty(shape, dtype=torch_dtype, device=_device_obj)
 
 
 def arange(start, stop=None, step=1, dtype=None):
     """Create array with evenly spaced values. Defaults to active real dtype."""
-    if dtype is None:
-        dtype = _active_real_dtype_np()
     if _backend == 'numpy':
+        if dtype is None:
+            dtype = _active_real_dtype_np()
         return np.arange(start, stop, step, dtype=dtype)
     else:
-        torch_dtype = _np_to_torch_dtype(dtype)
+        torch_dtype = _to_torch_dtype(dtype)
         if stop is None:
             stop = start
             start = 0
-        result = torch.arange(start, stop, step, dtype=torch_dtype)
-        return result.numpy()
+        return torch.arange(start, stop, step, dtype=torch_dtype,
+                            device=_device_obj)
+
+
+def logspace(start, stop, num, dtype=None):
+    """Logarithmically spaced values from 10**start to 10**stop."""
+    if _backend == 'numpy':
+        if dtype is None:
+            dtype = _active_real_dtype_np()
+        return np.logspace(start, stop, num, dtype=dtype)
+    else:
+        torch_dtype = _to_torch_dtype(dtype)
+        return torch.logspace(start, stop, num, dtype=torch_dtype,
+                              device=_device_obj)
 
 
 def asarray(x, dtype=None):
@@ -438,14 +519,14 @@ def asarray(x, dtype=None):
     if _backend == 'numpy':
         if dtype is None:
             return np.asarray(x)
+        if _torch_available and isinstance(dtype, torch.dtype):
+            # Convert torch dtype to numpy dtype for numpy backend
+            dtype = torch.zeros(0, dtype=dtype).numpy().dtype
         return np.asarray(x, dtype=dtype)
     else:
         if dtype is None:
-            x_torch = torch.as_tensor(x)
-        else:
-            torch_dtype = _np_to_torch_dtype(dtype)
-            x_torch = torch.as_tensor(x, dtype=torch_dtype)
-        return x_torch.numpy()
+            return _to_torch(x)
+        return _to_torch(x, _to_torch_dtype(dtype))
 
 
 def full_like(x, fill_value):
@@ -453,9 +534,7 @@ def full_like(x, fill_value):
     if _backend == 'numpy':
         return np.full_like(x, fill_value)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.full_like(x_torch, fill_value, dtype=x_torch.dtype)
-        return result.numpy()
+        return torch.full_like(_to_torch(x), fill_value)
 
 
 def concatenate(arrays, axis=0):
@@ -463,9 +542,8 @@ def concatenate(arrays, axis=0):
     if _backend == 'numpy':
         return np.concatenate(arrays, axis=axis)
     else:
-        arrays_torch = [torch.as_tensor(a) for a in arrays]
-        result = torch.cat(arrays_torch, dim=axis)
-        return result.numpy()
+        arrays_torch = [_to_torch(a) for a in arrays]
+        return torch.cat(arrays_torch, dim=axis)
 
 
 # ============================================================================
@@ -477,10 +555,8 @@ def meshgrid(*arrays, indexing='xy'):
     if _backend == 'numpy':
         return np.meshgrid(*arrays, indexing=indexing)
     else:
-        arrays_torch = [torch.as_tensor(a, dtype=_active_real_dtype_torch())
-                        for a in arrays]
-        result = torch.meshgrid(*arrays_torch, indexing=indexing)
-        return tuple(r.numpy() for r in result)
+        arrays_torch = [_to_torch(a, _active_real_dtype_torch()) for a in arrays]
+        return tuple(torch.meshgrid(*arrays_torch, indexing=indexing))
 
 
 def flip(x, axis):
@@ -488,9 +564,7 @@ def flip(x, axis):
     if _backend == 'numpy':
         return np.flip(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.flip(x_torch, dims=(axis,))
-        return result.numpy()
+        return torch.flip(_to_torch(x), dims=(axis,))
 
 
 def conj(x):
@@ -498,10 +572,8 @@ def conj(x):
     if _backend == 'numpy':
         return np.conj(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.conj(x_torch)
-        # resolve_conj() is needed before calling numpy() on conjugated tensor
-        return result.resolve_conj().numpy()
+        result = torch.conj(_to_torch(x))
+        return result.resolve_conj()
 
 
 def where(condition, x, y):
@@ -509,11 +581,8 @@ def where(condition, x, y):
     if _backend == 'numpy':
         return np.where(condition, x, y)
     else:
-        cond_torch = torch.as_tensor(np.asarray(condition, dtype=np.bool_))
-        x_torch = torch.as_tensor(x)
-        y_torch = torch.as_tensor(y)
-        result = torch.where(cond_torch, x_torch, y_torch)
-        return result.numpy()
+        cond_torch = _to_torch(condition).bool()
+        return torch.where(cond_torch, _to_torch(x), _to_torch(y))
 
 
 def clip(x, x_min, x_max):
@@ -521,9 +590,7 @@ def clip(x, x_min, x_max):
     if _backend == 'numpy':
         return np.clip(x, x_min, x_max)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.clamp(x_torch, min=x_min, max=x_max)
-        return result.numpy()
+        return torch.clamp(_to_torch(x), min=x_min, max=x_max)
 
 
 def maximum(a, b):
@@ -531,13 +598,49 @@ def maximum(a, b):
     if _backend == 'numpy':
         return np.maximum(a, b)
     else:
-        a_torch = torch.as_tensor(a)
-        if isinstance(b, torch.Tensor):
+        a_torch = _to_torch(a)
+        if isinstance(b, (int, float)):
+            b_torch = torch.tensor(b, dtype=a_torch.dtype, device=_device_obj)
+        elif isinstance(b, torch.Tensor):
             b_torch = b
         else:
-            b_torch = torch.as_tensor(b, dtype=a_torch.dtype)
-        result = torch.maximum(a_torch, b_torch)
-        return result.numpy()
+            b_torch = _to_torch(b, dtype=a_torch.dtype)
+        return torch.maximum(a_torch, b_torch)
+
+
+def pad(x, before, after, axis=-1, value=0):
+    """Pad array along a single axis with constant value.
+
+    Parameters
+    ----------
+    x : array
+        Input array.
+    before : int
+        Number of values to pad before.
+    after : int
+        Number of values to pad after.
+    axis : int
+        Axis along which to pad.
+    value : scalar
+        Pad value (default 0).
+    """
+    if _backend == 'numpy':
+        pad_width = [(0, 0)] * x.ndim
+        ndim_axis = axis % x.ndim
+        pad_width[ndim_axis] = (before, after)
+        return np.pad(x, pad_width, mode='constant', constant_values=value)
+    else:
+        x_torch = _to_torch(x)
+        ndim = x_torch.ndim
+        ndim_axis = axis % ndim
+        # torch.nn.functional.pad expects padding in reversed axis order:
+        # (last_dim_before, last_dim_after, ..., first_dim_before, first_dim_after)
+        pad_list = [0] * (2 * ndim)
+        # Position for ndim_axis: distance from last = (ndim - 1 - ndim_axis)
+        idx = 2 * (ndim - 1 - ndim_axis)
+        pad_list[idx] = before
+        pad_list[idx + 1] = after
+        return F.pad(x_torch, pad_list, mode='constant', value=value)
 
 
 # ============================================================================
@@ -549,9 +652,22 @@ def abs(x):
     if _backend == 'numpy':
         return np.abs(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.abs(x_torch)
-        return result.numpy()
+        return torch.abs(_to_torch(x))
+
+
+def abs_squared(x):
+    """Squared absolute value. For complex input, computes real^2 + imag^2
+    without the intermediate sqrt that ``abs(x)**2`` would require."""
+    if _backend == 'numpy':
+        x = np.asarray(x)
+        if np.iscomplexobj(x):
+            return x.real ** 2 + x.imag ** 2
+        return x ** 2
+    else:
+        x_torch = _to_torch(x)
+        if x_torch.is_complex():
+            return x_torch.real ** 2 + x_torch.imag ** 2
+        return x_torch ** 2
 
 
 def sqrt(x):
@@ -559,9 +675,7 @@ def sqrt(x):
     if _backend == 'numpy':
         return np.sqrt(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.sqrt(x_torch)
-        return result.numpy()
+        return torch.sqrt(_to_torch(x))
 
 
 def sign(x):
@@ -569,9 +683,7 @@ def sign(x):
     if _backend == 'numpy':
         return np.sign(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.sign(x_torch)
-        return result.numpy()
+        return torch.sign(_to_torch(x))
 
 
 def exp(x):
@@ -579,9 +691,23 @@ def exp(x):
     if _backend == 'numpy':
         return np.exp(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.exp(x_torch)
-        return result.numpy()
+        return torch.exp(_to_torch(x))
+
+
+def log(x):
+    """Natural logarithm."""
+    if _backend == 'numpy':
+        return np.log(x)
+    else:
+        return torch.log(_to_torch(x))
+
+
+def log10(x):
+    """Base-10 logarithm."""
+    if _backend == 'numpy':
+        return np.log10(x)
+    else:
+        return torch.log10(_to_torch(x))
 
 
 def cos(x):
@@ -589,9 +715,7 @@ def cos(x):
     if _backend == 'numpy':
         return np.cos(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.cos(x_torch)
-        return result.numpy()
+        return torch.cos(_to_torch(x))
 
 
 def sin(x):
@@ -599,9 +723,7 @@ def sin(x):
     if _backend == 'numpy':
         return np.sin(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.sin(x_torch)
-        return result.numpy()
+        return torch.sin(_to_torch(x))
 
 
 # ============================================================================
@@ -609,16 +731,25 @@ def sin(x):
 # ============================================================================
 
 def mean(x, axis=None):
-    """Mean of array."""
+    """Mean of array. *axis* may be an int, tuple of ints, or None."""
     if _backend == 'numpy':
         return np.mean(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
+        x_torch = _to_torch(x)
         if axis is None:
-            result = torch.mean(x_torch)
-        else:
-            result = torch.mean(x_torch, dim=axis)
-        return result.numpy()
+            return torch.mean(x_torch)
+        return torch.mean(x_torch, dim=axis)
+
+
+def nanmean(x, axis=None):
+    """Mean of array, ignoring NaNs."""
+    if _backend == 'numpy':
+        return np.nanmean(x, axis=axis)
+    else:
+        x_torch = _to_torch(x)
+        if axis is None:
+            return torch.nanmean(x_torch)
+        return torch.nanmean(x_torch, dim=axis)
 
 
 def std(x, axis=None):
@@ -626,12 +757,10 @@ def std(x, axis=None):
     if _backend == 'numpy':
         return np.std(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
+        x_torch = _to_torch(x)
         if axis is None:
-            result = torch.std(x_torch, correction=0)
-        else:
-            result = torch.std(x_torch, dim=axis, correction=0)
-        return result.numpy()
+            return torch.std(x_torch, correction=0)
+        return torch.std(x_torch, dim=axis, correction=0)
 
 
 def sum(x, axis=None):
@@ -639,12 +768,10 @@ def sum(x, axis=None):
     if _backend == 'numpy':
         return np.sum(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
+        x_torch = _to_torch(x)
         if axis is None:
-            result = torch.sum(x_torch)
-        else:
-            result = torch.sum(x_torch, dim=axis)
-        return result.numpy()
+            return torch.sum(x_torch)
+        return torch.sum(x_torch, dim=axis)
 
 
 def cumsum(x, axis=0):
@@ -652,9 +779,7 @@ def cumsum(x, axis=0):
     if _backend == 'numpy':
         return np.cumsum(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.cumsum(x_torch, dim=axis)
-        return result.numpy()
+        return torch.cumsum(_to_torch(x), dim=axis)
 
 
 def diff(x, axis=-1):
@@ -662,9 +787,52 @@ def diff(x, axis=-1):
     if _backend == 'numpy':
         return np.diff(x, axis=axis)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.diff(x_torch, dim=axis)
-        return result.numpy()
+        return torch.diff(_to_torch(x), dim=axis)
+
+
+# ============================================================================
+# Boolean / inspection
+# ============================================================================
+
+def isnan(x):
+    """Element-wise NaN test."""
+    if _backend == 'numpy':
+        return np.isnan(x)
+    else:
+        return torch.isnan(_to_torch(x))
+
+
+def any(x):
+    """True if any element is truthy. Returns Python bool."""
+    if _backend == 'numpy':
+        return bool(np.any(x))
+    else:
+        return bool(torch.any(_to_torch(x)))
+
+
+def all(x):
+    """True if all elements are truthy. Returns Python bool."""
+    if _backend == 'numpy':
+        return bool(np.all(x))
+    else:
+        return bool(torch.all(_to_torch(x)))
+
+
+def numel(x):
+    """Total number of elements in array."""
+    if _backend == 'numpy':
+        return np.asarray(x).size
+    else:
+        if isinstance(x, torch.Tensor):
+            return x.numel()
+        return np.asarray(x).size
+
+
+def iscomplexobj(x):
+    """Check if x has a complex dtype."""
+    if _torch_available and isinstance(x, torch.Tensor):
+        return x.is_complex()
+    return np.iscomplexobj(x)
 
 
 # ============================================================================
@@ -679,9 +847,7 @@ def real(x):
     if _backend == 'numpy':
         return np.real(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.real(x_torch)
-        return result.numpy()
+        return torch.real(_to_torch(x))
 
 
 def imag(x):
@@ -689,6 +855,87 @@ def imag(x):
     if _backend == 'numpy':
         return np.imag(x)
     else:
-        x_torch = torch.as_tensor(x)
-        result = torch.imag(x_torch)
-        return result.numpy()
+        return torch.imag(_to_torch(x))
+
+
+# ============================================================================
+# Convolution
+# ============================================================================
+
+def convolve1d(signal, kernel, axis=-1, nan_safe=False):
+    """1-D aperiodic convolution along *axis*, mode='valid'.
+
+    Parameters
+    ----------
+    signal : array
+        Input signal (N-D).
+    kernel : 1-D array
+        Convolution kernel.
+    axis : int
+        Axis of *signal* along which to convolve.
+    nan_safe : bool
+        If True, use direct (non-FFT) convolution that correctly propagates
+        NaNs. Falls back to scipy regardless of backend.
+
+    Returns
+    -------
+    array
+        Convolution result with size ``signal.shape[axis] - len(kernel) + 1``
+        along *axis*.
+    """
+    if nan_safe:
+        return _convolve1d_direct(signal, kernel, axis)
+    return _convolve1d_fft(signal, kernel, axis)
+
+
+def _convolve1d_fft(signal, kernel, axis):
+    """FFT-based aperiodic convolution, mode='valid'."""
+    n_sig = signal.shape[axis]
+    n_ker = len(kernel)
+    n_fft = n_sig + n_ker - 1
+    n_out = n_sig - n_ker + 1
+
+    # Pad signal along axis
+    sig_padded = pad(signal, 0, n_ker - 1, axis=axis)
+
+    # Build N-D kernel: shape is 1 everywhere except along axis
+    kernel_shape = [1] * signal.ndim if hasattr(signal, 'ndim') else [1]
+    ndim = len(kernel_shape)
+    kernel_shape[axis % ndim] = n_ker
+    if _backend == 'numpy':
+        kernel_nd = np.asarray(kernel).reshape(kernel_shape)
+    else:
+        kernel_nd = _to_torch(kernel).reshape(kernel_shape)
+    kernel_padded = pad(kernel_nd, 0, n_fft - n_ker, axis=axis)
+
+    # FFT, multiply, IFFT
+    sig_fft = rfft(sig_padded, axis=axis)
+    ker_fft = rfft(kernel_padded, axis=axis)
+    product = sig_fft * ker_fft
+    del sig_fft, ker_fft, sig_padded, kernel_padded
+    conv_full = irfft(product, n=n_fft, axis=axis)
+    del product
+
+    # Extract valid region
+    slices = [slice(None)] * conv_full.ndim
+    slices[axis % conv_full.ndim] = slice(n_ker - 1, n_ker - 1 + n_out)
+    return conv_full[tuple(slices)]
+
+
+def _convolve1d_direct(signal, kernel, axis):
+    """Direct convolution via scipy (handles NaNs). Always uses numpy."""
+    from scipy.signal import convolve
+    sig_np = to_numpy(signal) if not isinstance(signal, np.ndarray) else signal
+    ker_np = to_numpy(kernel) if not isinstance(kernel, np.ndarray) else kernel
+
+    # Reshape kernel for N-D
+    kernel_shape = [1] * sig_np.ndim
+    kernel_shape[axis % sig_np.ndim] = len(ker_np)
+    ker_nd = ker_np.reshape(kernel_shape)
+
+    result = convolve(sig_np, ker_nd, mode='valid', method='direct')
+
+    # Convert back to backend type if needed
+    if _backend != 'numpy':
+        return _to_torch(result)
+    return result

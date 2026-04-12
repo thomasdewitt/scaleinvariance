@@ -77,7 +77,7 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
 
     # Determine domain size for cutoff calculation
     if distance.ndim == 1:
-        domain_size = distance.size
+        domain_size = len(distance)
     else:
         # For N-D arrays, use minimum dimension size
         domain_size = min(distance.shape)
@@ -187,7 +187,7 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
             dist_sq = None
             for axis_idx, axis in enumerate(coord_arrays):
                 broadcast_shape = [1] * ndim
-                broadcast_shape[axis_idx] = axis.size
+                broadcast_shape[axis_idx] = axis.shape[0]
                 term = axis.reshape(broadcast_shape) ** 2
                 if dist_sq is None:
                     dist_sq = term

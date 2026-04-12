@@ -125,7 +125,9 @@ class TestSimulationTorchCPU:
             pytest.skip(f"Reference key {key} not found")
         torch.manual_seed(SEED)
         result = SIM_CASES[case_name]()
-        _assert_close(result, ref[key], key, rtol=0.0, atol=0.0)
+        # Tiny tolerance: native tensor path avoids numpy round-trips,
+        # which can shift float64 results by a few ULPs.
+        _assert_close(result, ref[key], key, rtol=1e-13, atol=1e-14)
 
 
 # =============================================================================
@@ -167,7 +169,8 @@ class TestSimulationTorchGPU:
 # =============================================================================
 
 class TestAnalysisNumpyBackend:
-    """Analysis with numpy backend should be bit-identical to reference."""
+    """Analysis with numpy backend. Tiny tolerance for Haar/spectral since
+    FFT-based convolution replaces scipy's direct convolution."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, ref):
@@ -177,8 +180,8 @@ class TestAnalysisNumpyBackend:
         self.signal_1d = ref['np_sim_fbm_1d_circulant']
         self.signal_2d = ref['np_sim_fbm_2d_circulant']
         self.fif_signal = ref['np_sim_fif_1d']
-        self.rtol = 0.0
-        self.atol = 0.0
+        self.rtol = 1e-13
+        self.atol = 1e-14
         yield
         si.set_backend(prev)
 
@@ -330,8 +333,9 @@ class TestAnalysisTorchBackend:
         _assert_close(kq_q, ref['analysis_kq_q'], 'kq_q', self.rtol, self.atol)
         _assert_close(kq_K, ref['analysis_kq_K'], 'kq_K', self.rtol, self.atol)
         _assert_close(kq_H, ref['analysis_kq_H'], 'kq_H', self.rtol, self.atol)
-        _assert_close(kq_C1, ref['analysis_kq_C1'], 'kq_C1', self.rtol, self.atol)
-        _assert_close(kq_alpha, ref['analysis_kq_alpha'], 'kq_alpha', self.rtol, self.atol)
+        # curve_fit results amplify small input differences
+        _assert_close(kq_C1, ref['analysis_kq_C1'], 'kq_C1', rtol=1e-6, atol=1e-8)
+        _assert_close(kq_alpha, ref['analysis_kq_alpha'], 'kq_alpha', rtol=1e-6, atol=1e-8)
 
     def test_two_point_intermittency(self, ref):
         c1, unc = si.two_point_intermittency_exponent(self.fif_signal)

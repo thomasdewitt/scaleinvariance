@@ -28,4 +28,7 @@ from .backend import (
     set_num_threads,
     set_numerical_precision,
     get_numerical_precision,
+    set_device,
+    get_device,
+    to_numpy,
 )
