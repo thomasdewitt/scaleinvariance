@@ -5,7 +5,6 @@ from .fbm import fBm_1D_circulant, fBm_ND_circulant
 from .kernels import (
     create_kernel_LS2010,
     create_kernel_naive,
-    create_kernel_spectral,
     create_kernel_spectral_odd,
 )
 from .fractional_integration import fractional_integral_spectral
