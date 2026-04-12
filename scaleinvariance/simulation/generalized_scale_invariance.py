@@ -5,7 +5,6 @@ This module provides functions for constructing anisotropic scale metrics
 used in GSI multifractal models, particularly for use with FIF_ND.
 """
 
-import numpy as np
 from .. import backend as B
 
 
@@ -105,35 +104,27 @@ def canonical_scale_metric(size, ls, Hz=5/9):
 
     ndim = len(size)
 
-    # Create coordinate arrays with dx=2 spacing (to match LS2010)
-    coord_arrays = [B.arange(-(dim - 1), dim, 2, dtype=float) for dim in size]
+    # Create coordinate arrays with dx=2 spacing (to match LS2010).
+    coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
 
-    # Create meshgrid
-    coord_grids = B.meshgrid(*coord_arrays, indexing='ij')
+    # Build the squared metric via broadcasted 1D axes so we never
+    # materialise full-size meshgrids for each axis. The last axis is
+    # anisotropic (applied via (|dz|/ls)^(2/Hz)); all others are isotropic.
+    total_sq = None
+    for axis_idx, axis in enumerate(coord_arrays):
+        broadcast_shape = [1] * ndim
+        broadcast_shape[axis_idx] = axis.size
+        reshaped = axis.reshape(broadcast_shape)
+        if axis_idx == ndim - 1:
+            term = (B.abs(reshaped) / ls) ** (2.0 / Hz)
+        else:
+            term = (reshaped / ls) ** 2
+        if total_sq is None:
+            total_sq = term
+        else:
+            total_sq = total_sq + term
+        del reshaped, term
 
-    if ndim == 2:
-        # 2D case (x-z plane): r = ls * sqrt((dx/ls)^2 + (dz/ls)^(2/Hz))
-        # Axis 0 is horizontal (x), axis 1 is vertical (z)
-        dx, dz = coord_grids
-
-        # Compute normalized squared distances
-        dx_norm_sq = (dx / ls)**2
-        dz_norm_aniso = (B.abs(dz) / ls)**(2.0 / Hz)
-
-        # Combine and scale
-        metric = ls * B.sqrt(dx_norm_sq + dz_norm_aniso)
-
-    elif ndim == 3:
-        # 3D case: r = ls * sqrt((dx/ls)^2 + (dy/ls)^2 + (dz/ls)^(2/Hz))
-        dx, dy, dz = coord_grids
-
-        # Compute normalized squared distances
-        dx_norm_sq = (dx / ls)**2
-        dy_norm_sq = (dy / ls)**2
-        dz_norm_aniso = (B.abs(dz) / ls)**(2.0 / Hz)
-
-        # Combine and scale
-        metric = ls * B.sqrt(dx_norm_sq + dy_norm_sq + dz_norm_aniso)
-
-    # Backend functions already return numpy arrays
+    metric = ls * B.sqrt(total_sq)
+    del total_sq
     return metric

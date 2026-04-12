@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.9.1**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.10.0**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -83,11 +83,13 @@ All three methods estimate the same H parameter but may give slightly different 
 
 ### Backend Control
 
-| Task        | Function                                         | Notes                                               |
-| ----------- | ------------------------------------------------ | --------------------------------------------------- |
-| Set backend | `set_backend('numpy')` or `set_backend('torch')` | Torch is often much faster but is a huge dependency |
-| Get backend | `get_backend()`                                  | Returns current backend name                        |
-| Set threads | `set_num_threads(n)`                             | Default: 90% CPU count                              |
+| Task              | Function                                                       | Notes                                               |
+| ----------------- | -------------------------------------------------------------- | --------------------------------------------------- |
+| Set backend       | `set_backend('numpy')` or `set_backend('torch')`               | Torch is often much faster but is a huge dependency |
+| Get backend       | `get_backend()`                                                | Returns current backend name                        |
+| Set threads       | `set_num_threads(n)`                                           | Default: 90% CPU count                              |
+| Set precision     | `set_numerical_precision('float32')` or `('float64')`          | Default: `'float64'`. Applies to both backends.     |
+| Get precision     | `get_numerical_precision()`                                    | Returns current precision string                    |
 
 ## Function Signatures
 
@@ -347,9 +349,28 @@ scaleinvariance.set_backend('torch')
 
 # Control threading
 scaleinvariance.set_num_threads(8)
+
+# Control numerical precision (default 'float64'). Halves memory for
+# simulations at the cost of float32 accuracy. Applies to both backends.
+scaleinvariance.set_numerical_precision('float32')
+assert scaleinvariance.get_numerical_precision() == 'float32'
 ```
 
 All functions return NumPy arrays regardless of backend.
+
+### Overflow guards in FIF simulations
+
+`FIF_1D` and `FIF_ND` clip the internal log-flux to a precision-aware
+exponent range (`(-88, 88)` for float32, `(-700, 700)` for float64) before
+calling `exp`. This prevents unbounded cascade amplitudes from producing
+`inf`. If any samples hit the clip, a `RuntimeWarning` is emitted naming
+the number of saturated samples — treat it as a signal to lower `C1` or
+raise precision. For well-behaved parameter ranges (e.g. `C1 <= 0.5`,
+`alpha >= 1.5`) the clip never engages and outputs are identical to the
+unclipped computation.
+
+User-supplied `scale_metric` arrays in `FIF_ND` are now validated as
+finite and strictly positive before being used.
 
 ## Complete Examples
 

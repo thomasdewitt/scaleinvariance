@@ -1,4 +1,3 @@
-import numpy as np
 from .. import backend as B
 
 
@@ -36,8 +35,11 @@ def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
 
     # Hanning window: 1 when normalized_dist=0, 0 when normalized_dist=1
     window = 0.5 * (1.0 + B.cos(B.pi * normalized_dist))
+    del normalized_dist
 
-    return kernel * window
+    result = kernel * window
+    del window
+    return result
 
 # LS 2010 kernels
 
@@ -84,34 +86,35 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     cutoff_length = domain_size / 2.0
     cutoff_length2 = cutoff_length / ratio
 
-    # Calculate exponential cutoffs
-    exponential_cutoff = B.exp(B.clip(-(distance/cutoff_length)**4, -200, 0))
-    exponential_cutoff2 = B.exp(B.clip(-(distance/cutoff_length2)**4, -200, 0))
+    # Base singularity kernel (kept live; everything else below is temporary).
+    base_kernel = distance ** exponent
 
-    # Base singularity kernel
-    base_kernel = distance**exponent
+    # First normalization constant — use exp cutoff then drop the smoothed
+    # copy immediately so we never hold two full-volume copies at peak.
+    exp_cutoff1 = B.exp(B.clip(-(distance / cutoff_length) ** 4, -200, 0))
+    smoothed = base_kernel * exp_cutoff1
+    del exp_cutoff1
+    norm_constant1 = B.sum(smoothed)
+    del smoothed
 
-    # Calculate normalization constants
-    smoothed_kernel1 = base_kernel * exponential_cutoff
-    norm_constant1 = B.sum(smoothed_kernel1)
+    # Second normalization constant (narrower cutoff).
+    exp_cutoff2 = B.exp(B.clip(-(distance / cutoff_length2) ** 4, -200, 0))
+    smoothed = base_kernel * exp_cutoff2
+    del exp_cutoff2
+    norm_constant2 = B.sum(smoothed)
+    del smoothed
 
-    smoothed_kernel2 = base_kernel * exponential_cutoff2
-    norm_constant2 = B.sum(smoothed_kernel2)
-
-    # Normalization factor
-    ratio_factor = ratio**norm_ratio_exponent
+    ratio_factor = ratio ** norm_ratio_exponent
     normalization_factor = (ratio_factor * norm_constant1 - norm_constant2) / (ratio_factor - 1)
 
-    # Final smoothing filter
-    final_filter = B.exp(B.clip(-distance/3.0, -200, 0))
-    smoothed_kernel = base_kernel * final_filter
-    filter_integral = B.sum(smoothed_kernel)
+    # Final smoothing filter; reused once more for the correction below.
+    final_filter = B.exp(B.clip(-distance / 3.0, -200, 0))
+    filter_integral = B.sum(base_kernel * final_filter)
 
-    # Apply correction
     correction_factor = -normalization_factor / filter_integral
     corrected_kernel = base_kernel * (1 + correction_factor * final_filter)
+    del final_filter, base_kernel
 
-    # Apply final power transformation if specified
     if final_power is not None:
         corrected_kernel = corrected_kernel ** final_power
 
@@ -177,14 +180,22 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     else:
         # N-D case
         if scale_metric is None:
-            # Create coordinate arrays for each dimension (dx=2 spacing)
             coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
 
-            # Create N-D meshgrid
-            coord_grids = B.meshgrid(*coord_arrays, indexing='ij')
-
-            # Calculate Euclidean distance: sqrt(x1^2 + x2^2 + ... + xn^2)
-            distance = B.sqrt(sum(grid**2 for grid in coord_grids))
+            # Build |r|^2 via broadcasted 1D axes to avoid full-size meshgrids.
+            ndim = len(size)
+            dist_sq = None
+            for axis_idx, axis in enumerate(coord_arrays):
+                broadcast_shape = [1] * ndim
+                broadcast_shape[axis_idx] = axis.size
+                term = axis.reshape(broadcast_shape) ** 2
+                if dist_sq is None:
+                    dist_sq = term
+                else:
+                    dist_sq = dist_sq + term
+                del term
+            distance = B.sqrt(dist_sq)
+            del dist_sq
         else:
             # Use provided scale metric
             distance = scale_metric
@@ -243,59 +254,12 @@ def create_kernel_naive(size, exponent, causal=False, outer_scale=None, outer_sc
 
 # Spectral kernel construction
 
-def create_kernel_spectral(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
-                           final_power=None, scaling_dimension=None):
-    """
-    Create a Fourier-space power-law transfer function for periodic convolution.
-
-    Returns the frequency-domain response directly (no inverse FFT). Pass the
-    result to ``periodic_convolve`` / ``periodic_convolve_nd`` with
-    ``kernel_is_fourier=True``.  Only valid for non-causal periodic filtering.
-    """
-    if causal:
-        raise ValueError("Spectral kernel construction does not support causal kernels")
-
-    if isinstance(size, int):
-        shape = (size,)
-        if scaling_dimension is None:
-            scaling_dimension = 1.0
-    else:
-        shape = tuple(size)
-        if scaling_dimension is None:
-            scaling_dimension = float(len(shape))
-
-    effective_exponent = exponent if final_power is None else exponent * final_power
-    response_exponent = -(float(scaling_dimension) + effective_exponent)
-
-    freq_axes = [np.fft.fftfreq(n, d=1.0) for n in shape]
-    if len(shape) == 1:
-        freqs = np.abs(freq_axes[0])
-    else:
-        freq_grids = np.meshgrid(*freq_axes, indexing='ij')
-        freqs = np.sqrt(sum(grid**2 for grid in freq_grids))
-
-    if outer_scale is None:
-        outer_scale = max(shape)
-    min_freq = 1.0 / float(outer_scale)
-    freqs_regularized = np.maximum(freqs, min_freq)
-
-    response = freqs_regularized ** response_exponent
-    if shape == (1,):
-        response[(0,)] = 1.0
-    elif len(shape) == 1:
-        response[0] = response[1]
-    else:
-        response[(0,) * len(shape)] = response[(1,) + (0,) * (len(shape) - 1)]
-
-    return response
-
-
 def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, outer_scale_width_factor=2.0,
                                final_power=None, scaling_dimension=None):
     """
     Create an odd (antisymmetric) Fourier-space transfer function from a power law.
 
-    Like create_kernel_spectral, but the transfer function is multiplied by
+    Like the even spectral kernel, but the transfer function is multiplied by
     i*sign(f), producing a purely imaginary spectrum whose inverse FFT is
     real and antisymmetric.
 
@@ -336,25 +300,29 @@ def create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=None, o
     effective_exponent = exponent if final_power is None else exponent * final_power
     response_exponent = -(float(scaling_dimension) + effective_exponent)
 
-    freqs = np.fft.fftfreq(size, d=1.0)
-    freqs_abs = np.abs(freqs)
+    freqs = B.fftfreq(size, d=1.0)
+    freqs_abs = B.abs(freqs)
 
     if outer_scale is None:
         outer_scale = size
     min_freq = 1.0 / float(outer_scale)
-    freqs_regularized = np.maximum(freqs_abs, min_freq)
+    freqs_regularized = B.maximum(freqs_abs, min_freq)
+    del freqs_abs
 
     # Even magnitude response (same as standard spectral kernel)
     magnitude = freqs_regularized ** response_exponent
+    del freqs_regularized
     magnitude[0] = magnitude[1]
 
-    # Make odd: multiply by i*sign(f)
-    # This gives a purely imaginary spectrum whose IFFT is real and antisymmetric
-    sign_f = np.sign(freqs)
+    sign_f = B.sign(freqs)
+    del freqs
     sign_f[0] = 0.0  # DC component is zero for odd function
     # Nyquist component must also be zero for real odd sequences
     if size % 2 == 0:
         sign_f[size // 2] = 0.0
-    response = 1j * sign_f * magnitude
-
+    # Build the purely imaginary response at the active complex precision.
+    # Assembling via real/imag avoids materialising an intermediate
+    # complex128 literal from ``1j`` in float32 mode.
+    response = B.zeros(magnitude.shape, dtype=B._active_complex_dtype_np())
+    response.imag[:] = sign_f * magnitude
     return response

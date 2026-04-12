@@ -12,10 +12,11 @@ Tests that naive and LS2010 kernels:
 import pytest
 import numpy as np
 from scaleinvariance.simulation.kernels import (
-    create_kernel_naive, create_kernel_LS2010, create_kernel_spectral,
+    create_kernel_naive, create_kernel_LS2010,
     create_kernel_spectral_odd,
 )
-from scaleinvariance.simulation.FIF import periodic_convolve, periodic_convolve_nd
+from scaleinvariance.simulation.FIF import periodic_convolve
+from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
 
 
 class TestKernelNaive:
@@ -130,38 +131,6 @@ class TestKernelLS2010:
         assert abs(k_small[mid + far_lag]) < abs(k_full[mid + far_lag])
 
 
-class TestKernelSpectral:
-
-    def test_shape_and_dtype(self):
-        k = create_kernel_spectral(256, -0.3)
-        assert k.shape == (256,)
-        assert k.dtype == np.float64
-        assert not np.any(np.isnan(k))
-
-    def test_rejects_causal(self):
-        with pytest.raises(ValueError):
-            create_kernel_spectral(256, -0.3, causal=True)
-
-    def test_identity_for_zero_hurst_kernel(self):
-        size = 512
-        signal = np.random.default_rng(0).standard_normal(size)
-        kernel = create_kernel_spectral(size, exponent=-1.0)
-        filtered = periodic_convolve(signal, kernel, kernel_is_fourier=True)
-        np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
-
-    def test_nd_shape_and_dtype(self):
-        kernel = create_kernel_spectral((32, 48), -1.7)
-        assert kernel.shape == (32, 48)
-        assert not np.any(np.isnan(kernel))
-
-    def test_nd_identity_for_zero_hurst_kernel(self):
-        size = (32, 32)
-        signal = np.random.default_rng(0).standard_normal(size)
-        kernel = create_kernel_spectral(size, exponent=-2.0)
-        filtered = periodic_convolve_nd(signal, kernel, kernel_is_fourier=True)
-        np.testing.assert_allclose(filtered, signal, rtol=1e-10, atol=1e-10)
-
-
 class TestKernelSpectralOdd:
 
     def test_shape(self):
@@ -192,20 +161,25 @@ class TestKernelSpectralOdd:
         response = create_kernel_spectral_odd(512, -0.5)
         assert abs(response[0]) < 1e-12
 
-    def test_same_magnitude_as_even(self):
-        """Odd kernel magnitude should match even spectral kernel magnitude (skip DC & Nyquist)."""
+    def test_magnitude_is_power_law(self):
+        """Odd kernel magnitude (excluding DC and Nyquist) should follow
+        the expected power-law |f|^response_exponent."""
         size = 512
         exponent = -0.3
-        resp_even = create_kernel_spectral(size, exponent)
-        resp_odd = create_kernel_spectral_odd(size, exponent)
-        # Compare magnitudes directly (both are already in Fourier space)
-        mag_even = np.abs(resp_even)
-        mag_odd = np.abs(resp_odd)
-        # Skip index 0 (DC) and index size//2 (Nyquist) — both are 0 in odd kernel
+        response_exponent = -(1.0 + exponent)  # scaling_dimension=1
+        resp = create_kernel_spectral_odd(size, exponent)
+        freqs = np.fft.fftfreq(size, d=1.0)
+        # Build expected magnitude from the regularized frequency grid.
+        freqs_abs = np.abs(freqs)
+        min_freq = 1.0 / float(size)
+        freqs_reg = np.maximum(freqs_abs, min_freq)
+        expected_mag = freqs_reg ** response_exponent
+        expected_mag[0] = expected_mag[1]
+        # Skip DC (0) and Nyquist (zeroed in odd kernel).
         mask = np.ones(size, dtype=bool)
         mask[0] = False
         mask[size // 2] = False
-        np.testing.assert_allclose(mag_even[mask], mag_odd[mask], rtol=1e-10)
+        np.testing.assert_allclose(np.abs(resp[mask]), expected_mag[mask], rtol=1e-10)
 
     def test_fif_1d_with_spectral_odd(self):
         """FIF_1D should run without error using spectral_odd observable kernel."""
@@ -252,3 +226,33 @@ class TestKernelConsistency:
             # Peak should be within 1 of center
             assert abs(peak_idx - size // 2) <= 1, \
                 f"{method} peak at {peak_idx}, expected near {size // 2}"
+
+
+class TestFractionalIntegralSpectral:
+    """Tests for fractional_integral_spectral."""
+
+    def test_identity_at_H_zero_1d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal(512)
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    def test_identity_at_H_zero_2d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal((64, 64))
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    def test_identity_at_H_zero_3d(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal((16, 16, 16))
+        out = fractional_integral_spectral(signal, H=0.0)
+        np.testing.assert_allclose(out, signal, rtol=1e-12, atol=1e-12)
+
+    def test_real_output(self):
+        """Output should be real-valued for a real input."""
+        rng = np.random.default_rng(7)
+        signal = rng.standard_normal(256)
+        out = fractional_integral_spectral(signal, H=0.3)
+        assert np.isrealobj(out)
+        assert not np.any(np.isnan(out))

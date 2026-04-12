@@ -21,9 +21,10 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scaleinvariance.simulation.kernels import (
-    create_kernel_naive, create_kernel_LS2010, create_kernel_spectral,
+    create_kernel_naive, create_kernel_LS2010,
     create_kernel_spectral_odd,
 )
+from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
 
 
 def parse_args():
@@ -55,9 +56,12 @@ def main():
     # Build kernels
     k_naive = np.array(create_kernel_naive(size, exponent, causal=causal, outer_scale=outer_scale))
     k_ls2010 = np.array(create_kernel_LS2010(size, exponent, norm_ratio_exp, causal=causal, outer_scale=outer_scale))
-    # Spectral kernels return Fourier-space responses; IFFT to real space for plotting
-    resp_spectral = create_kernel_spectral(size, exponent, causal=False, outer_scale=outer_scale)
-    k_spectral = np.fft.fftshift(np.real(np.fft.ifft(resp_spectral)))
+    # Spectral: use fractional_integral_spectral on a delta to recover the
+    # real-space impulse response (H = exponent + 1 maps exponent to Hurst).
+    delta = np.zeros(size)
+    delta[size // 2] = 1.0
+    k_spectral = fractional_integral_spectral(delta, H=H_equiv, outer_scale=outer_scale)
+    k_spectral = np.fft.fftshift(k_spectral)
 
     # Odd kernel (non-causal only)
     resp_odd = create_kernel_spectral_odd(size, exponent, causal=False, outer_scale=outer_scale)

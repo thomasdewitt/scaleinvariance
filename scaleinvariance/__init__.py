@@ -7,7 +7,7 @@ This package provides tools for:
 - Fractional Brownian motion simulation
 """
 
-__version__ = "0.9.1"
+__version__ = "0.10.0"
 __author__ = "Thomas DeWitt"
 
 from . import backend
@@ -22,4 +22,10 @@ from .analysis import structure_function_hurst, haar_fluctuation_hurst, spectral
 from .simulation import FIF_1D, FIF_ND, fBm_1D, fBm_1D_circulant, fBm_ND_circulant, canonical_scale_metric
 
 # Backend configuration
-from .backend import set_backend, get_backend, set_num_threads
+from .backend import (
+    set_backend,
+    get_backend,
+    set_num_threads,
+    set_numerical_precision,
+    get_numerical_precision,
+)
