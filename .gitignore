@@ -114,3 +114,6 @@ dmypy.json
 
 # macOS
 .DS_Store
+
+# Backend refactor reference data (generated once, not checked in)
+tests/functional/backend_refactor_reference.npz
