@@ -249,12 +249,18 @@ def to_numpy(x):
 def exp_clip_limits():
     """Return ``(lo, hi)`` safe exponent range for ``exp`` at active precision.
 
-    For float32: ``(-88.7, 88.7)``, just below ``log(float32_max) ≈ 88.72``.
-    For float64: ``(-709.0, 709.0)``, just below ``log(float64_max) ≈ 709.78``.
+    The **lower** limit is just below ``log(float_max)`` — ``exp(lo)`` is a
+    tiny positive number that cannot cause downstream overflow.
+
+    The **upper** limit is halved so that ``exp(hi)`` ≈ ``sqrt(float_max)``,
+    leaving ample headroom for downstream FFT sums.
+
+    For float32: ``(-88.7, 44.35)``  →  exp range [2.7e-39, 1.8e19].
+    For float64: ``(-709.0, 354.5)`` →  exp range [1.2e-308, 1.3e154].
     """
     if _numerical_precision == 'float32':
-        return (-88.7, 88.7)
-    return (-709.0, 709.0)
+        return (-88.7, 44.35)
+    return (-709.0, 354.5)
 
 
 def eps():

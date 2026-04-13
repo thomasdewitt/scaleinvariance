@@ -411,12 +411,6 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         flux = flux / B.mean(flux)
         return B.to_numpy(flux)
 
-    # Pre-normalize flux before the observable convolution to prevent float32
-    # overflow in the FFT.  We divide by max (not mean) because the sum used
-    # by mean can itself overflow at float32.  The final result is always
-    # re-normalized, and convolution is linear, so this is lossless.
-    flux = flux / B.max(flux)
-
     # Observable kernel (kernel 2) real-space power-law parameters.
     # obs_kernel_exponent is the exponent of |r|^p in the real-space kernel;
     # obs_kernel_norm_ratio_exp is the exponent used in the LS2010 ratio
@@ -714,12 +708,6 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
         flux = flux[output_slices]
         return B.to_numpy(flux / B.mean(flux))
-
-    # Pre-normalize flux before the observable convolution to prevent float32
-    # overflow in the FFT.  We divide by max (not mean) because the sum used
-    # by mean can itself overflow at float32.  The final result is always
-    # re-normalized, and convolution is linear, so this is lossless.
-    flux = flux / B.max(flux)
 
     # Observable kernel (kernel 2) real-space power-law parameters, derived
     # from the Hurst exponent H and the scaling dimension.
