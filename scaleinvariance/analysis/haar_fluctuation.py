@@ -5,7 +5,7 @@ from .. import backend as B
 from ..utils import process_lags, estimate_hurst_from_scaling
 
 
-def haar_fluctuation_analysis(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', nan_behavior='raise'):
+def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', nan_behavior='raise'):
     """
     Calculate the mean absolute Haar fluctuation for regularly spaced scalar data along a given axis.
 
@@ -164,8 +164,16 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
             min_sep = 4
 
     # Calculate Haar fluctuations
-    lags, haar_values = haar_fluctuation_analysis(data, order=1, max_sep=max_sep,
+    lags, haar_values = haar_fluctuation(data, order=1, max_sep=max_sep,
                                                  axis=axis, lags='powers of 1.2')
 
     # Use common Hurst estimation utility
     return estimate_hurst_from_scaling(lags, haar_values, min_sep, max_sep, return_fit)
+
+
+def haar_fluctuation_analysis(*args, **kwargs):
+    """Deprecated: use haar_fluctuation() instead."""
+    import warnings
+    warnings.warn("haar_fluctuation_analysis is deprecated, use haar_fluctuation instead",
+                  DeprecationWarning, stacklevel=2)
+    return haar_fluctuation(*args, **kwargs)

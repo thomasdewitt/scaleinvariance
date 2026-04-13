@@ -5,7 +5,7 @@ from .. import backend as B
 from ..utils import process_lags, estimate_hurst_from_scaling
 
 
-def structure_function_analysis(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'):
+def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'):
     """
     Calculate the mean structure function for regularly spaced scalar data along a given axis.
 
@@ -141,8 +141,16 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
             min_sep = 4
 
     # Calculate structure function
-    lags, sf_values = structure_function_analysis(data, order=1, max_sep=max_sep,
+    lags, sf_values = structure_function(data, order=1, max_sep=max_sep,
                                                  axis=axis, lags='powers of 1.2')
 
     # Use common Hurst estimation utility
     return estimate_hurst_from_scaling(lags, sf_values, min_sep, max_sep, return_fit)
+
+
+def structure_function_analysis(*args, **kwargs):
+    """Deprecated: use structure_function() instead."""
+    import warnings
+    warnings.warn("structure_function_analysis is deprecated, use structure_function instead",
+                  DeprecationWarning, stacklevel=2)
+    return structure_function(*args, **kwargs)

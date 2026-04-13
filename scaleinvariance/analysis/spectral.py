@@ -5,7 +5,7 @@ from .. import backend as B
 from ..utils import estimate_hurst_from_scaling
 
 
-def spectral_analysis(data, max_wavelength=None, min_wavelength=None, nbins=50, axis=0):
+def power_spectrum_binned(data, max_wavelength=None, min_wavelength=None, nbins=50, axis=0):
     """
     Compute binned power spectral density for data along specified axis.
 
@@ -155,7 +155,7 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
             min_wavelength = 4 * nyquist_wavelength
 
     # Compute binned power spectral density
-    binned_freq, binned_psd = spectral_analysis(data, max_wavelength, min_wavelength, nbins, axis)
+    binned_freq, binned_psd = power_spectrum_binned(data, max_wavelength, min_wavelength, nbins, axis)
 
     if len(binned_freq) < 2:
         raise ValueError("Not enough frequency bins for Hurst estimation")
@@ -175,3 +175,11 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
         return H, H_uncertainty, freqs_fit, psd_fit, fit_line
     else:
         return H, H_uncertainty
+
+
+def spectral_analysis(*args, **kwargs):
+    """Deprecated: use power_spectrum_binned() instead."""
+    import warnings
+    warnings.warn("spectral_analysis is deprecated, use power_spectrum_binned instead",
+                  DeprecationWarning, stacklevel=2)
+    return power_spectrum_binned(*args, **kwargs)

@@ -1,5 +1,5 @@
 import numpy as np
-from scaleinvariance import FIF_1D, two_point_intermittency_exponent
+from scaleinvariance import FIF_1D, two_point_C1
 
 # Test parameters
 size = 2**25
@@ -27,7 +27,7 @@ for C1_true in C1_values:
     data = np.stack(realizations, axis=0)
 
     # Estimate C1
-    C1_est, sigma_C1 = two_point_intermittency_exponent(
+    C1_est, sigma_C1 = two_point_C1(
         data,
         order=order,
         assumed_alpha=alpha,

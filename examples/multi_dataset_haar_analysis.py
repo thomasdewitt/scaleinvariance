@@ -221,7 +221,7 @@ def main():
 
 def create_comparison_plot(datasets):
     """Create comparison plots for temperature data and Haar fluctuation analysis."""
-    from scaleinvariance.analysis.haar_fluctuation import haar_fluctuation_analysis
+    from scaleinvariance.analysis.haar_fluctuation import haar_fluctuation
     
     fig, axes = plt.subplots(3, 1, figsize=(10, 8))
     colors = ['red', 'blue', 'green']
@@ -251,7 +251,7 @@ def create_comparison_plot(datasets):
     
     # Bottom panel: Haar fluctuation analysis for all datasets
     for i, (name, data) in enumerate(datasets.items()):
-        lags, fluctuations = haar_fluctuation_analysis(data['anomalies'])
+        lags, fluctuations = haar_fluctuation(data['anomalies'])
         
         # Convert lags to years
         if data['time_unit'] == 'months':

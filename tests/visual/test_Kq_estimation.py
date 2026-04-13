@@ -53,20 +53,20 @@ sims = np.vstack(all_sims)  # shape: (N_SIMS, SIM_SIZE)
 
 # ---- Estimate K(q): fit_hurst=False (H from order-1 scaling, fit C1 and alpha) ----
 print(f"\nEstimating K(q) with hurst_fit_method='fixed'...")
-q_values, K_empirical, H_fit1, C1_fit1, alpha_fit1 = scaleinvariance.compute_K_q_function(
+q_values, K_empirical, H_fit1, C1_fit1, alpha_fit1 = scaleinvariance.K_empirical(
     sims, scaling_method=SCALING_METHOD, hurst_fit_method='fixed', min_sep=FIT_MIN, max_sep=FIT_MAX, axis=1)
 print(f"  H={H_fit1:.3f}  C1={C1_fit1:.3f}  alpha={alpha_fit1:.3f}  (input: H={H}, C1={C1}, alpha={alpha})")
 
 # ---- Estimate K(q): joint fit of H, C1, alpha ----
 print(f"Estimating K(q) with hurst_fit_method='joint'...")
-_, _, H_fit2, C1_fit2, alpha_fit2 = scaleinvariance.compute_K_q_function(
+_, _, H_fit2, C1_fit2, alpha_fit2 = scaleinvariance.K_empirical(
     sims, scaling_method=SCALING_METHOD, hurst_fit_method='joint', min_sep=FIT_MIN, max_sep=FIT_MAX, axis=1)
 print(f"  H={H_fit2:.3f}  C1={C1_fit2:.3f}  alpha={alpha_fit2:.3f}  (input: H={H}, C1={C1}, alpha={alpha})")
 
 # ---- Plot ----
-K_theoretical = scaleinvariance.K(q_values, C1, alpha)
-K_fitted1     = scaleinvariance.K(q_values, C1_fit1, alpha_fit1)
-K_fitted2     = scaleinvariance.K(q_values, C1_fit2, alpha_fit2)
+K_theoretical = scaleinvariance.K_analytic(q_values, C1, alpha)
+K_fitted1     = scaleinvariance.K_analytic(q_values, C1_fit1, alpha_fit1)
+K_fitted2     = scaleinvariance.K_analytic(q_values, C1_fit2, alpha_fit2)
 
 fig, ax = plt.subplots(figsize=(8, 6))
 

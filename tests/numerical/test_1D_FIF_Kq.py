@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Comprehensive test for K(q) parameter recovery via compute_K_q_function.
+Comprehensive test for K(q) parameter recovery via K_empirical.
 
 Tests combinations of H, C1, alpha, verifying that structure function / Haar
 analysis correctly recovers the input parameters within tolerances.
 """
 import numpy as np
-from scaleinvariance import FIF_1D, compute_K_q_function
+from scaleinvariance import FIF_1D, K_empirical
 
 # Test configuration
 KERNEL_METHOD_FLUX       = 'LS2010'
@@ -37,7 +37,7 @@ def run_combination(H, C1, alpha):
         for _ in range(N_REALIZATIONS)
     ], axis=0)
 
-    _, _, H_fit, C1_fit, alpha_fit = compute_K_q_function(
+    _, _, H_fit, C1_fit, alpha_fit = K_empirical(
         data, scaling_method=SCALING_METHOD, hurst_fit_method=HURST_FIT_METHOD,
         min_sep=MIN_SEP, max_sep=MAX_SEP, axis=1
     )

@@ -2,12 +2,12 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 from .. import backend as B
-from .structure_function import structure_function_analysis
-from .haar_fluctuation import haar_fluctuation_analysis
+from .structure_function import structure_function
+from .haar_fluctuation import haar_fluctuation
 from ..utils import estimate_hurst_from_scaling
 
 
-def K(q, C1, alpha):
+def K_analytic(q, C1, alpha):
     """
     Multifractal K(q) function.
 
@@ -32,9 +32,9 @@ def K(q, C1, alpha):
     return (C1 / (alpha - 1)) * (q**alpha - q)
 
 
-def compute_K_q_function(data, q_values=None, scaling_method='structure_function',
-                         hurst_fit_method='fixed', min_sep=None, max_sep=None, axis=0,
-                         nan_behavior='raise'):
+def K_empirical(data, q_values=None, scaling_method='structure_function',
+                hurst_fit_method='fixed', min_sep=None, max_sep=None, axis=0,
+                nan_behavior='raise'):
     """
     Estimate the multifractal K(q) scaling function empirically.
 
@@ -69,7 +69,7 @@ def compute_K_q_function(data, q_values=None, scaling_method='structure_function
     axis : int, optional
         Axis along which to compute (default: 0).
     nan_behavior : str, optional
-        Passed to haar_fluctuation_analysis when scaling_method='haar_fluctuation'.
+        Passed to haar_fluctuation when scaling_method='haar_fluctuation'.
         'raise' (default) or 'ignore'.
 
     Returns
@@ -98,10 +98,10 @@ def compute_K_q_function(data, q_values=None, scaling_method='structure_function
 
     if scaling_method == 'structure_function':
         analysis_kwargs = {}
-        analysis_func = structure_function_analysis
+        analysis_func = structure_function
     elif scaling_method == 'haar_fluctuation':
         analysis_kwargs = {'nan_behavior': nan_behavior}
-        analysis_func = haar_fluctuation_analysis
+        analysis_func = haar_fluctuation
     else:
         raise ValueError(f"Unknown scaling_method: '{scaling_method}'. Use 'structure_function' or 'haar_fluctuation'")
 
@@ -113,28 +113,28 @@ def compute_K_q_function(data, q_values=None, scaling_method='structure_function
         lags_q, values_q = analysis_func(data, order=q, max_sep=max_sep, axis=axis, **analysis_kwargs)
         zeta_empirical[i], _ = estimate_hurst_from_scaling(lags_q, values_q, min_sep, max_sep)
 
-    K_empirical = q_values * H_est - zeta_empirical
+    K_values = q_values * H_est - zeta_empirical
 
     if hurst_fit_method == 'joint':
-        zeta_model = lambda q, H, C1, alpha: q * H - K(q, C1, alpha)
+        zeta_model = lambda q, H, C1, alpha: q * H - K_analytic(q, C1, alpha)
         popt, _ = curve_fit(zeta_model, q_values, zeta_empirical,
                             p0=[H_est, 0.1, 1.8],
                             bounds=([H_est - 0.5, 0.0, 1.01], [H_est + 0.5, 1.0, 2.0]),
                             max_nfev=10000)
         H_fit, C1_fit, alpha_fit = popt
     elif hurst_fit_method == 'fixed':
-        popt, _ = curve_fit(K, q_values, K_empirical, p0=[0.1, 1.8],
+        popt, _ = curve_fit(K_analytic, q_values, K_values, p0=[0.1, 1.8],
                             bounds=([0.0, 1.01], [1.0, 2.0]), max_nfev=10000)
         C1_fit, alpha_fit = popt
         H_fit = H_est
     else:
         raise ValueError(f"Unknown hurst_fit_method: '{hurst_fit_method}'. Use 'fixed' or 'joint'")
 
-    return q_values, K_empirical, H_fit, C1_fit, alpha_fit
+    return q_values, K_values, H_fit, C1_fit, alpha_fit
 
 
-def two_point_intermittency_exponent(data, order=2, assumed_alpha=2.0, scaling_method='structure_function',
-                                      min_sep=None, max_sep=None, axis=0):
+def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_function',
+                 min_sep=None, max_sep=None, axis=0):
     """
     Calculate the intermittency parameter C1 from multifractal scaling.
 
@@ -174,13 +174,13 @@ def two_point_intermittency_exponent(data, order=2, assumed_alpha=2.0, scaling_m
         finite sample effects (convergence is very slow)
     """
     if assumed_alpha == 1:
-        raise ValueError("assumed_alpha=1 is singular in two_point_intermittency_exponent")
+        raise ValueError("assumed_alpha=1 is singular in two_point_C1")
 
     # Select analysis function
     if scaling_method == 'structure_function':
-        analysis_func = structure_function_analysis
+        analysis_func = structure_function
     elif scaling_method == 'haar_fluctuation':
-        analysis_func = haar_fluctuation_analysis
+        analysis_func = haar_fluctuation
     else:
         raise ValueError(f"Unknown scaling_method: {scaling_method}. Use 'structure_function' or 'haar_fluctuation'")
 
@@ -207,3 +207,27 @@ def two_point_intermittency_exponent(data, order=2, assumed_alpha=2.0, scaling_m
     sigma_C1 = abs((assumed_alpha - 1) / denominator) * sigma_Kq
 
     return C1, sigma_C1
+
+
+def K(*args, **kwargs):
+    """Deprecated: use K_analytic() instead."""
+    import warnings
+    warnings.warn("K is deprecated, use K_analytic instead",
+                  DeprecationWarning, stacklevel=2)
+    return K_analytic(*args, **kwargs)
+
+
+def compute_K_q_function(*args, **kwargs):
+    """Deprecated: use K_empirical() instead."""
+    import warnings
+    warnings.warn("compute_K_q_function is deprecated, use K_empirical instead",
+                  DeprecationWarning, stacklevel=2)
+    return K_empirical(*args, **kwargs)
+
+
+def two_point_intermittency_exponent(*args, **kwargs):
+    """Deprecated: use two_point_C1() instead."""
+    import warnings
+    warnings.warn("two_point_intermittency_exponent is deprecated, use two_point_C1 instead",
+                  DeprecationWarning, stacklevel=2)
+    return two_point_C1(*args, **kwargs)

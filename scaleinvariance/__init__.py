@@ -18,7 +18,15 @@ backend.set_num_threads(backend._num_threads)
 from . import analysis, simulation
 
 # Easy access to main functions
-from .analysis import structure_function_hurst, haar_fluctuation_hurst, spectral_hurst, haar_fluctuation_analysis, structure_function_analysis, spectral_analysis, two_point_intermittency_exponent, K, compute_K_q_function
+from .analysis import (
+    structure_function, structure_function_hurst,
+    haar_fluctuation, haar_fluctuation_hurst,
+    power_spectrum_binned, spectral_hurst,
+    K_analytic, K_empirical, two_point_C1,
+    # Deprecated aliases
+    structure_function_analysis, haar_fluctuation_analysis, spectral_analysis,
+    two_point_intermittency_exponent, K, compute_K_q_function,
+)
 from .simulation import FIF_1D, FIF_ND, fBm_1D, fBm_1D_circulant, fBm_ND_circulant, canonical_scale_metric
 
 # Backend configuration

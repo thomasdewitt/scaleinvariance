@@ -75,7 +75,7 @@ def main():
 
     # Concatenate all simulations and analyze with structure_function_analysis
     all_fif_data = np.vstack(all_fif_data)
-    lags, mean_fif_sf = scaleinvariance.structure_function_analysis(
+    lags, mean_fif_sf = scaleinvariance.structure_function(
         all_fif_data, order=2, axis=1)
 
     # Generate uncorrected FIF simulations for comparison
@@ -94,7 +94,7 @@ def main():
 
     # Concatenate uncorrected simulations and analyze
     all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
-    lags_uncorrected, mean_fif_uncorrected_sf = scaleinvariance.structure_function_analysis(
+    lags_uncorrected, mean_fif_uncorrected_sf = scaleinvariance.structure_function(
         all_fif_uncorrected_data, order=2, axis=1)
 
     # Generate spectral_odd FIF simulations (non-causal only, H != 0 only)
@@ -110,7 +110,7 @@ def main():
                                                    outer_scale=outer_scale, periodic=True)
             all_fif_odd_data.append(fif_field_odd)
         all_fif_odd_data = np.vstack(all_fif_odd_data)
-        lags_odd, mean_fif_odd_sf = scaleinvariance.structure_function_analysis(
+        lags_odd, mean_fif_odd_sf = scaleinvariance.structure_function(
             all_fif_odd_data, order=2, axis=1)
 
     # Generate spectral (even) FIF simulations for comparison (non-causal only, H != 0 only)
@@ -126,7 +126,7 @@ def main():
                                                         outer_scale=outer_scale, periodic=True)
             all_fif_spectral_data.append(fif_field_spectral)
         all_fif_spectral_data = np.vstack(all_fif_spectral_data)
-        lags_spectral, mean_fif_spectral_sf = scaleinvariance.structure_function_analysis(
+        lags_spectral, mean_fif_spectral_sf = scaleinvariance.structure_function(
             all_fif_spectral_data, order=2, axis=1)
 
 

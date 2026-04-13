@@ -11,7 +11,7 @@ from scaleinvariance import (
     fBm_1D_circulant, fBm_ND_circulant, fBm_1D,
     FIF_1D, FIF_ND,
     structure_function_hurst, haar_fluctuation_hurst, spectral_hurst,
-    structure_function_analysis, haar_fluctuation_analysis, spectral_analysis,
+    structure_function, haar_fluctuation, power_spectrum_binned,
     set_backend, get_backend
 )
 
@@ -252,9 +252,9 @@ class TestAnalysisFunctions:
         np.random.seed(42)
         return fBm_ND_circulant((256, 256), H=0.6, periodic=True)
 
-    def test_structure_function_analysis(self, test_data_1d):
+    def test_structure_function(self, test_data_1d):
         """Test structure function analysis."""
-        lags, sf_values = structure_function_analysis(test_data_1d, order=2, axis=0)
+        lags, sf_values = structure_function(test_data_1d, order=2, axis=0)
 
         assert len(lags) > 0, "No lags returned"
         assert len(sf_values) == len(lags), "Lags and values length mismatch"
@@ -262,9 +262,9 @@ class TestAnalysisFunctions:
         assert np.issubdtype(lags.dtype, np.integer), f"Expected lags dtype integer, got {lags.dtype}"
         assert sf_values.dtype == np.float64, f"Expected values dtype float64, got {sf_values.dtype}"
 
-    def test_haar_fluctuation_analysis(self, test_data_1d):
+    def test_haar_fluctuation(self, test_data_1d):
         """Test Haar fluctuation analysis."""
-        lags, haar_values = haar_fluctuation_analysis(test_data_1d, order=1, axis=0)
+        lags, haar_values = haar_fluctuation(test_data_1d, order=1, axis=0)
 
         assert len(lags) > 0, "No lags returned"
         assert len(haar_values) == len(lags), "Lags and values length mismatch"
@@ -272,9 +272,9 @@ class TestAnalysisFunctions:
         assert np.issubdtype(lags.dtype, np.integer), f"Expected lags dtype integer, got {lags.dtype}"
         assert haar_values.dtype == np.float64, f"Expected values dtype float64, got {haar_values.dtype}"
 
-    def test_spectral_analysis(self, test_data_1d):
+    def test_power_spectrum_binned(self, test_data_1d):
         """Test spectral analysis."""
-        freqs, psd = spectral_analysis(test_data_1d, nbins=30, axis=0)
+        freqs, psd = power_spectrum_binned(test_data_1d, nbins=30, axis=0)
 
         assert len(freqs) > 0, "No frequencies returned"
         assert len(psd) == len(freqs), "Frequencies and PSD length mismatch"
@@ -315,13 +315,13 @@ class TestAnalysisFunctions:
     def test_2d_analysis(self, test_data_2d):
         """Test analysis functions work on 2D data."""
         # Test along first axis
-        lags_sf, sf_values = structure_function_analysis(test_data_2d, order=2, axis=0)
+        lags_sf, sf_values = structure_function(test_data_2d, order=2, axis=0)
         assert len(lags_sf) > 0 and not np.all(np.isnan(sf_values))
 
-        lags_haar, haar_values = haar_fluctuation_analysis(test_data_2d, order=1, axis=0)
+        lags_haar, haar_values = haar_fluctuation(test_data_2d, order=1, axis=0)
         assert len(lags_haar) > 0 and not np.all(np.isnan(haar_values))
 
-        freqs, psd = spectral_analysis(test_data_2d, nbins=30, axis=0)
+        freqs, psd = power_spectrum_binned(test_data_2d, nbins=30, axis=0)
         assert len(freqs) > 0 and not np.all(np.isnan(psd))
 
         # Test Hurst estimation on 2D data

@@ -73,7 +73,7 @@ def main():
 
     # Concatenate all simulations and analyze with structure_function_analysis
     all_fbm_naive_data = np.vstack(all_fbm_naive_data)
-    lags, mean_fbm_naive_sf = scaleinvariance.structure_function_analysis(
+    lags, mean_fbm_naive_sf = scaleinvariance.structure_function(
         all_fbm_naive_data, order=2, axis=1)
 
     # Generate fBm simulations using integration method (LS2010 kernel)
@@ -91,7 +91,7 @@ def main():
 
     # Concatenate all simulations and analyze with structure_function_analysis
     all_fbm_ls2010_data = np.vstack(all_fbm_ls2010_data)
-    lags_ls2010, mean_fbm_ls2010_sf = scaleinvariance.structure_function_analysis(
+    lags_ls2010, mean_fbm_ls2010_sf = scaleinvariance.structure_function(
         all_fbm_ls2010_data, order=2, axis=1)
 
     # Generate reference fBm using circulant method for comparison (only if H in valid range)
@@ -109,7 +109,7 @@ def main():
 
         # Concatenate spectral simulations and analyze
         all_fbm_spectral_data = np.vstack(all_fbm_spectral_data)
-        lags_spectral, mean_fbm_spectral_sf = scaleinvariance.structure_function_analysis(
+        lags_spectral, mean_fbm_spectral_sf = scaleinvariance.structure_function(
             all_fbm_spectral_data, order=2, axis=1)
     else:
         all_fbm_spectral_data = None

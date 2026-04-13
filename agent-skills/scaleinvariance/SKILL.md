@@ -34,7 +34,7 @@ H, err = scaleinvariance.structure_function_hurst(stacked, axis=1)  # Analyze al
 # H_avg = np.mean(results)  # INCORRECT - these are not linear operations!
 ```
 
-This applies to all analysis functions: `structure_function_hurst`, `haar_fluctuation_hurst`, `spectral_hurst`, `two_point_intermittency_exponent`, and their underlying `*_analysis` functions.
+This applies to all analysis functions: `structure_function_hurst`, `haar_fluctuation_hurst`, `spectral_hurst`, `two_point_C1`, and their underlying scaling functions (`structure_function`, `haar_fluctuation`, `power_spectrum_binned`).
 
 ## When to Use Which Function
 
@@ -54,16 +54,17 @@ All three methods estimate the same H parameter but may give slightly different 
 
 | Task                      | Function                      | Notes                               |
 | ------------------------- | ----------------------------- | ----------------------------------- |
-| Structure function values | `structure_function_analysis` | Returns lags and S_n(r) values      |
-| Haar fluctuation values   | `haar_fluctuation_analysis`   | Returns lags and fluctuation values |
-| Power spectral density    | `spectral_analysis`           | Returns binned frequencies and PSD  |
+| Structure function values | `structure_function`          | Returns lags and S_n(r) values      |
+| Haar fluctuation values   | `haar_fluctuation`            | Returns lags and fluctuation values |
+| Power spectral density    | `power_spectrum_binned`       | Returns binned frequencies and PSD  |
 
 ### Intermittency Analysis
 
-| Task                  | Function                           | Notes                                                                 |
-| --------------------- | ---------------------------------- | --------------------------------------------------------------------- |
-| Estimate C1 parameter | `two_point_intermittency_exponent` | Uses two-point scaling to estimate intermittency                      |
-| Compute K(q) function | `K`                                | Returns Lovejoy and Schertzer's K(q) = (C1/(alpha-1)) * (q^alpha - q) |
+| Task                      | Function      | Notes                                                                  |
+| ------------------------- | ------------- | ---------------------------------------------------------------------- |
+| Estimate C1 parameter     | `two_point_C1`| Uses two-point scaling to estimate intermittency                       |
+| Analytic K(q) function    | `K_analytic`  | Returns Lovejoy and Schertzer's K(q) = (C1/(alpha-1)) * (q^alpha - q) |
+| Empirical K(q) from data  | `K_empirical` | Estimates K(q) scaling function from data across range of q values     |
 
 ### Simulation
 
@@ -132,7 +133,7 @@ scaleinvariance.spectral_hurst(
 ### Scaling Analysis Functions
 
 ```python
-scaleinvariance.structure_function_analysis(
+scaleinvariance.structure_function(
     data,                    # N-dimensional array
     order=1,                 # Order n of structure function S_n(r)
     max_sep=None,            # Maximum lag to compute
@@ -142,7 +143,7 @@ scaleinvariance.structure_function_analysis(
 ```
 
 ```python
-scaleinvariance.haar_fluctuation_analysis(
+scaleinvariance.haar_fluctuation(
     data,                    # N-dimensional array
     order=1,                 # Order of fluctuation
     max_sep=None,            # Maximum lag to compute
@@ -153,7 +154,7 @@ scaleinvariance.haar_fluctuation_analysis(
 ```
 
 ```python
-scaleinvariance.spectral_analysis(
+scaleinvariance.power_spectrum_binned(
     data,                    # N-dimensional array
     max_wavelength=None,     # Maximum wavelength to include
     min_wavelength=None,     # Minimum wavelength to include
@@ -165,7 +166,7 @@ scaleinvariance.spectral_analysis(
 ### Intermittency Analysis
 
 ```python
-scaleinvariance.two_point_intermittency_exponent(
+scaleinvariance.two_point_C1(
     data,                           # N-dimensional array
     order=2,                        # Second order for exponent (default: 2)
     assumed_alpha=2.0,              # Levy stability parameter (default: Gaussian)
@@ -177,11 +178,24 @@ scaleinvariance.two_point_intermittency_exponent(
 ```
 
 ```python
-scaleinvariance.K(
+scaleinvariance.K_analytic(
     q,       # Order of moment (float or array)
     C1,      # Codimension of mean (intermittency parameter)
     alpha    # Levy stability parameter
 ) -> K_value   # K(q) = (C1/(alpha-1)) * (q^alpha - q)
+```
+
+```python
+scaleinvariance.K_empirical(
+    data,                           # N-dimensional array
+    q_values=None,                  # Moment orders (default: 0.1 to 2.5 by 0.1)
+    scaling_method='structure_function',  # or 'haar_fluctuation'
+    hurst_fit_method='fixed',       # 'fixed' or 'joint'
+    min_sep=None,                   # Min lag for scaling fits
+    max_sep=None,                   # Max lag for scaling fits
+    axis=0,                         # Axis along which to compute
+    nan_behavior='raise'            # 'raise' or 'ignore' (haar_fluctuation only)
+) -> (q_values, K_values, H_fit, C1_fit, alpha_fit)
 ```
 
 ### FIF Simulation

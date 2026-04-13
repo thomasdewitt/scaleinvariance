@@ -207,79 +207,79 @@ def fbm_1d():
 class TestStructureFunctionAnalysis:
 
     def test_shapes_match(self, fbm_1d):
-        lags, sf = scaleinvariance.structure_function_analysis(fbm_1d)
+        lags, sf = scaleinvariance.structure_function(fbm_1d)
         assert lags.shape == sf.shape
 
     def test_lags_sorted_positive(self, fbm_1d):
-        lags, _ = scaleinvariance.structure_function_analysis(fbm_1d)
+        lags, _ = scaleinvariance.structure_function(fbm_1d)
         assert np.all(lags > 0)
         assert np.all(np.diff(lags) > 0)
 
     def test_sf_positive(self, fbm_1d):
-        _, sf = scaleinvariance.structure_function_analysis(fbm_1d)
+        _, sf = scaleinvariance.structure_function(fbm_1d)
         assert np.all(sf > 0)
 
     def test_order_changes_values(self, fbm_1d):
-        _, sf1 = scaleinvariance.structure_function_analysis(fbm_1d, order=1)
-        _, sf2 = scaleinvariance.structure_function_analysis(fbm_1d, order=2)
+        _, sf1 = scaleinvariance.structure_function(fbm_1d, order=1)
+        _, sf2 = scaleinvariance.structure_function(fbm_1d, order=2)
         assert not np.allclose(sf1, sf2)
 
     def test_max_sep_respected(self, fbm_1d):
         max_sep = 100
-        lags, _ = scaleinvariance.structure_function_analysis(fbm_1d, max_sep=max_sep)
+        lags, _ = scaleinvariance.structure_function(fbm_1d, max_sep=max_sep)
         assert np.all(lags <= max_sep)
 
 
 class TestHaarFluctuationAnalysis:
 
     def test_shapes_match(self, fbm_1d):
-        lags, haar = scaleinvariance.haar_fluctuation_analysis(fbm_1d)
+        lags, haar = scaleinvariance.haar_fluctuation(fbm_1d)
         assert lags.shape == haar.shape
 
     def test_lags_all_even(self, fbm_1d):
-        lags, _ = scaleinvariance.haar_fluctuation_analysis(fbm_1d)
+        lags, _ = scaleinvariance.haar_fluctuation(fbm_1d)
         assert np.all(lags % 2 == 0)
 
     def test_values_positive(self, fbm_1d):
-        _, haar = scaleinvariance.haar_fluctuation_analysis(fbm_1d)
+        _, haar = scaleinvariance.haar_fluctuation(fbm_1d)
         assert np.all(haar > 0)
 
     def test_order_changes_values(self, fbm_1d):
-        _, h1 = scaleinvariance.haar_fluctuation_analysis(fbm_1d, order=1)
-        _, h2 = scaleinvariance.haar_fluctuation_analysis(fbm_1d, order=2)
+        _, h1 = scaleinvariance.haar_fluctuation(fbm_1d, order=1)
+        _, h2 = scaleinvariance.haar_fluctuation(fbm_1d, order=2)
         assert not np.allclose(h1, h2)
 
     def test_max_sep_respected(self, fbm_1d):
         max_sep = 100
-        lags, _ = scaleinvariance.haar_fluctuation_analysis(fbm_1d, max_sep=max_sep)
+        lags, _ = scaleinvariance.haar_fluctuation(fbm_1d, max_sep=max_sep)
         assert np.all(lags <= max_sep)
 
     def test_nan_behavior_raise(self):
         data = scaleinvariance.fBm_1D_circulant(SIZE, 0.5).copy()
         data[10] = np.nan
         with pytest.raises(ValueError):
-            scaleinvariance.haar_fluctuation_analysis(data, nan_behavior='raise')
+            scaleinvariance.haar_fluctuation(data, nan_behavior='raise')
 
     def test_nan_behavior_ignore(self):
         data = scaleinvariance.fBm_1D_circulant(SIZE, 0.5).copy()
         data[10] = np.nan
-        lags, haar = scaleinvariance.haar_fluctuation_analysis(data, nan_behavior='ignore')
+        lags, haar = scaleinvariance.haar_fluctuation(data, nan_behavior='ignore')
         assert lags.shape == haar.shape
 
 
 class TestSpectralAnalysis:
 
     def test_shapes_match(self, fbm_1d):
-        freqs, psd = scaleinvariance.spectral_analysis(fbm_1d)
+        freqs, psd = scaleinvariance.power_spectrum_binned(fbm_1d)
         assert freqs.shape == psd.shape
 
     def test_freqs_positive_sorted(self, fbm_1d):
-        freqs, _ = scaleinvariance.spectral_analysis(fbm_1d)
+        freqs, _ = scaleinvariance.power_spectrum_binned(fbm_1d)
         assert np.all(freqs > 0)
         assert np.all(np.diff(freqs) > 0)
 
     def test_psd_positive(self, fbm_1d):
-        _, psd = scaleinvariance.spectral_analysis(fbm_1d)
+        _, psd = scaleinvariance.power_spectrum_binned(fbm_1d)
         assert np.all(psd > 0)
 
 
@@ -342,43 +342,43 @@ class TestHurstFunctions:
 
 
 # ============================================================
-# K function
+# K_analytic
 # ============================================================
 
 class TestKFunction:
 
     def test_K_at_q1_is_zero(self):
-        assert scaleinvariance.K(1.0, 0.1, 1.8) == 0.0
+        assert scaleinvariance.K_analytic(1.0, 0.1, 1.8) == 0.0
 
     @pytest.mark.parametrize("alpha", [1.5, 1.8, 2.0])
     def test_K_with_C1_zero_is_zero(self, alpha):
         q = np.array([0.5, 1.0, 1.5, 2.0])
-        result = scaleinvariance.K(q, 0.0, alpha)
+        result = scaleinvariance.K_analytic(q, 0.0, alpha)
         np.testing.assert_array_equal(result, 0.0)
 
     def test_K_positive_for_q_gt_1(self):
         q = np.array([1.1, 1.5, 2.0, 2.5])
-        K_vals = scaleinvariance.K(q, 0.1, 1.8)
+        K_vals = scaleinvariance.K_analytic(q, 0.1, 1.8)
         assert np.all(K_vals > 0)
 
     def test_K_negative_for_q_lt_1(self):
         q = np.array([0.1, 0.3, 0.5, 0.9])
-        K_vals = scaleinvariance.K(q, 0.1, 1.8)
+        K_vals = scaleinvariance.K_analytic(q, 0.1, 1.8)
         assert np.all(K_vals < 0)
 
     def test_K_array_input(self):
         q = np.arange(0.1, 2.51, 0.1)
-        result = scaleinvariance.K(q, 0.1, 1.8)
+        result = scaleinvariance.K_analytic(q, 0.1, 1.8)
         assert result.shape == q.shape
 
     def test_K_matches_formula(self):
         q, C1, alpha = 2.0, 0.1, 1.8
         expected = (C1 / (alpha - 1)) * (q**alpha - q)
-        assert abs(scaleinvariance.K(q, C1, alpha) - expected) < 1e-12
+        assert abs(scaleinvariance.K_analytic(q, C1, alpha) - expected) < 1e-12
 
 
 # ============================================================
-# two_point_intermittency_exponent
+# two_point_C1
 # ============================================================
 
 class TestTwoPointIntermittencyExponent:
@@ -389,18 +389,18 @@ class TestTwoPointIntermittencyExponent:
 
     @pytest.mark.parametrize("method", ['structure_function', 'haar_fluctuation'])
     def test_both_scaling_methods_run(self, fif_data, method):
-        C1, uncertainty = scaleinvariance.two_point_intermittency_exponent(
+        C1, uncertainty = scaleinvariance.two_point_C1(
             fif_data, scaling_method=method, axis=1)
         assert np.isfinite(C1)
         assert uncertainty > 0
 
     def test_invalid_scaling_method_raises(self, fif_data):
         with pytest.raises(ValueError):
-            scaleinvariance.two_point_intermittency_exponent(fif_data, scaling_method='invalid', axis=1)
+            scaleinvariance.two_point_C1(fif_data, scaling_method='invalid', axis=1)
 
     def test_order_changes_result(self, fif_data):
-        C1_2, _ = scaleinvariance.two_point_intermittency_exponent(fif_data, order=2, axis=1)
-        C1_3, _ = scaleinvariance.two_point_intermittency_exponent(fif_data, order=3, axis=1)
+        C1_2, _ = scaleinvariance.two_point_C1(fif_data, order=2, axis=1)
+        C1_3, _ = scaleinvariance.two_point_C1(fif_data, order=3, axis=1)
         assert C1_2 != C1_3
 
 

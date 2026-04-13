@@ -190,12 +190,12 @@ class TestAnalysisNumpyBackend:
         si.set_backend(prev)
 
     def test_structure_function_order1(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.structure_function(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_sf_lags'], 'sf_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf_values'], 'sf_values', self.rtol, self.atol)
 
     def test_structure_function_order2(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_1d, order=2, axis=0)
+        lags, values = si.structure_function(self.signal_1d, order=2, axis=0)
         _assert_close(lags, ref['analysis_sf_lags_o2'], 'sf_lags_o2', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf_values_o2'], 'sf_values_o2', self.rtol, self.atol)
 
@@ -205,12 +205,12 @@ class TestAnalysisNumpyBackend:
         _assert_close(unc, ref['analysis_sf_unc'], 'sf_unc', self.rtol, self.atol)
 
     def test_haar_fluctuation_order1(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_haar_lags'], 'haar_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_values'], 'haar_values', self.rtol, self.atol)
 
     def test_haar_fluctuation_order2(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_1d, order=2, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_1d, order=2, axis=0)
         _assert_close(lags, ref['analysis_haar_lags_o2'], 'haar_lags_o2', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_values_o2'], 'haar_values_o2', self.rtol, self.atol)
 
@@ -219,8 +219,8 @@ class TestAnalysisNumpyBackend:
         _assert_close(H, ref['analysis_haar_H'], 'haar_H', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_haar_unc'], 'haar_unc', self.rtol, self.atol)
 
-    def test_spectral_analysis(self, ref):
-        freq, psd = si.spectral_analysis(self.signal_1d, axis=0)
+    def test_power_spectrum_binned(self, ref):
+        freq, psd = si.power_spectrum_binned(self.signal_1d, axis=0)
         _assert_close(freq, ref['analysis_spec_freq'], 'spec_freq', self.rtol, self.atol)
         _assert_close(psd, ref['analysis_spec_psd'], 'spec_psd', self.rtol, self.atol)
 
@@ -229,9 +229,9 @@ class TestAnalysisNumpyBackend:
         _assert_close(H, ref['analysis_spec_H'], 'spec_H', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_spec_unc'], 'spec_unc', self.rtol, self.atol)
 
-    def test_compute_K_q_function(self, ref):
+    def test_K_empirical(self, ref):
         q_vals = np.arange(0.1, 2.51, 0.1)
-        kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.compute_K_q_function(
+        kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.K_empirical(
             self.fif_signal, q_values=q_vals, scaling_method='structure_function',
             hurst_fit_method='fixed'
         )
@@ -242,29 +242,29 @@ class TestAnalysisNumpyBackend:
         _assert_close(kq_alpha, ref['analysis_kq_alpha'], 'kq_alpha', self.rtol, self.atol)
 
     def test_two_point_intermittency(self, ref):
-        c1, unc = si.two_point_intermittency_exponent(self.fif_signal)
+        c1, unc = si.two_point_C1(self.fif_signal)
         _assert_close(c1, ref['analysis_c1_val'], 'c1_val', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_c1_unc'], 'c1_unc', self.rtol, self.atol)
 
     def test_structure_function_2d(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_2d, order=1, axis=0)
+        lags, values = si.structure_function(self.signal_2d, order=1, axis=0)
         _assert_close(lags, ref['analysis_sf2d_lags'], 'sf2d_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf2d_values'], 'sf2d_values', self.rtol, self.atol)
 
     def test_haar_fluctuation_2d(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_2d, order=1, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_2d, order=1, axis=0)
         _assert_close(lags, ref['analysis_haar2d_lags'], 'haar2d_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar2d_values'], 'haar2d_values', self.rtol, self.atol)
 
     def test_spectral_2d(self, ref):
-        freq, psd = si.spectral_analysis(self.signal_2d, axis=0)
+        freq, psd = si.power_spectrum_binned(self.signal_2d, axis=0)
         _assert_close(freq, ref['analysis_spec2d_freq'], 'spec2d_freq', self.rtol, self.atol)
         _assert_close(psd, ref['analysis_spec2d_psd'], 'spec2d_psd', self.rtol, self.atol)
 
     def test_haar_nan_path(self, ref):
         test_nan = self.signal_1d.copy()
         test_nan[100:110] = np.nan
-        lags, values = si.haar_fluctuation_analysis(test_nan, order=1, axis=0, nan_behavior='ignore')
+        lags, values = si.haar_fluctuation(test_nan, order=1, axis=0, nan_behavior='ignore')
         _assert_close(lags, ref['analysis_haar_nan_lags'], 'haar_nan_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_nan_values'], 'haar_nan_values', self.rtol, self.atol)
 
@@ -289,12 +289,12 @@ class TestAnalysisTorchBackend:
         si.set_backend(prev)
 
     def test_structure_function_order1(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.structure_function(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_sf_lags'], 'sf_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf_values'], 'sf_values', self.rtol, self.atol)
 
     def test_structure_function_order2(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_1d, order=2, axis=0)
+        lags, values = si.structure_function(self.signal_1d, order=2, axis=0)
         _assert_close(lags, ref['analysis_sf_lags_o2'], 'sf_lags_o2', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf_values_o2'], 'sf_values_o2', self.rtol, self.atol)
 
@@ -304,12 +304,12 @@ class TestAnalysisTorchBackend:
         _assert_close(unc, ref['analysis_sf_unc'], 'sf_unc', self.rtol, self.atol)
 
     def test_haar_fluctuation_order1(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_haar_lags'], 'haar_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_values'], 'haar_values', self.rtol, self.atol)
 
     def test_haar_fluctuation_order2(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_1d, order=2, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_1d, order=2, axis=0)
         _assert_close(lags, ref['analysis_haar_lags_o2'], 'haar_lags_o2', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_values_o2'], 'haar_values_o2', self.rtol, self.atol)
 
@@ -318,8 +318,8 @@ class TestAnalysisTorchBackend:
         _assert_close(H, ref['analysis_haar_H'], 'haar_H', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_haar_unc'], 'haar_unc', self.rtol, self.atol)
 
-    def test_spectral_analysis(self, ref):
-        freq, psd = si.spectral_analysis(self.signal_1d, axis=0)
+    def test_power_spectrum_binned(self, ref):
+        freq, psd = si.power_spectrum_binned(self.signal_1d, axis=0)
         _assert_close(freq, ref['analysis_spec_freq'], 'spec_freq', self.rtol, self.atol)
         _assert_close(psd, ref['analysis_spec_psd'], 'spec_psd', self.rtol, self.atol)
 
@@ -328,9 +328,9 @@ class TestAnalysisTorchBackend:
         _assert_close(H, ref['analysis_spec_H'], 'spec_H', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_spec_unc'], 'spec_unc', self.rtol, self.atol)
 
-    def test_compute_K_q_function(self, ref):
+    def test_K_empirical(self, ref):
         q_vals = np.arange(0.1, 2.51, 0.1)
-        kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.compute_K_q_function(
+        kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.K_empirical(
             self.fif_signal, q_values=q_vals, scaling_method='structure_function',
             hurst_fit_method='fixed'
         )
@@ -342,29 +342,29 @@ class TestAnalysisTorchBackend:
         _assert_close(kq_alpha, ref['analysis_kq_alpha'], 'kq_alpha', rtol=1e-6, atol=1e-8)
 
     def test_two_point_intermittency(self, ref):
-        c1, unc = si.two_point_intermittency_exponent(self.fif_signal)
+        c1, unc = si.two_point_C1(self.fif_signal)
         _assert_close(c1, ref['analysis_c1_val'], 'c1_val', self.rtol, self.atol)
         _assert_close(unc, ref['analysis_c1_unc'], 'c1_unc', self.rtol, self.atol)
 
     def test_structure_function_2d(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_2d, order=1, axis=0)
+        lags, values = si.structure_function(self.signal_2d, order=1, axis=0)
         _assert_close(lags, ref['analysis_sf2d_lags'], 'sf2d_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf2d_values'], 'sf2d_values', self.rtol, self.atol)
 
     def test_haar_fluctuation_2d(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_2d, order=1, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_2d, order=1, axis=0)
         _assert_close(lags, ref['analysis_haar2d_lags'], 'haar2d_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar2d_values'], 'haar2d_values', self.rtol, self.atol)
 
     def test_spectral_2d(self, ref):
-        freq, psd = si.spectral_analysis(self.signal_2d, axis=0)
+        freq, psd = si.power_spectrum_binned(self.signal_2d, axis=0)
         _assert_close(freq, ref['analysis_spec2d_freq'], 'spec2d_freq', self.rtol, self.atol)
         _assert_close(psd, ref['analysis_spec2d_psd'], 'spec2d_psd', self.rtol, self.atol)
 
     def test_haar_nan_path(self, ref):
         test_nan = self.signal_1d.copy()
         test_nan[100:110] = np.nan
-        lags, values = si.haar_fluctuation_analysis(test_nan, order=1, axis=0, nan_behavior='ignore')
+        lags, values = si.haar_fluctuation(test_nan, order=1, axis=0, nan_behavior='ignore')
         _assert_close(lags, ref['analysis_haar_nan_lags'], 'haar_nan_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_nan_values'], 'haar_nan_values', self.rtol, self.atol)
 
@@ -393,17 +393,17 @@ class TestAnalysisTorchGPU:
         si.set_backend(prev)
 
     def test_structure_function_order1(self, ref):
-        lags, values = si.structure_function_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.structure_function(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_sf_lags'], 'sf_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_sf_values'], 'sf_values', self.rtol, self.atol)
 
     def test_haar_fluctuation_order1(self, ref):
-        lags, values = si.haar_fluctuation_analysis(self.signal_1d, order=1, axis=0)
+        lags, values = si.haar_fluctuation(self.signal_1d, order=1, axis=0)
         _assert_close(lags, ref['analysis_haar_lags'], 'haar_lags', self.rtol, self.atol)
         _assert_close(values, ref['analysis_haar_values'], 'haar_values', self.rtol, self.atol)
 
-    def test_spectral_analysis(self, ref):
-        freq, psd = si.spectral_analysis(self.signal_1d, axis=0)
+    def test_power_spectrum_binned(self, ref):
+        freq, psd = si.power_spectrum_binned(self.signal_1d, axis=0)
         _assert_close(freq, ref['analysis_spec_freq'], 'spec_freq', self.rtol, self.atol)
         _assert_close(psd, ref['analysis_spec_psd'], 'spec_psd', self.rtol, self.atol)
 

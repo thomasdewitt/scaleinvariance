@@ -84,22 +84,22 @@ class TestIntermittencyGrossAccuracy:
 
     @pytest.mark.parametrize("C1_true", [0.05, 0.15])
     @pytest.mark.parametrize("kernel", ['LS2010', 'spectral'])
-    def test_two_point_intermittency_exponent(self, C1_true, kernel):
+    def test_two_point_C1(self, C1_true, kernel):
         data = make_fif(H=0.5, C1=C1_true, alpha=1.8, kernel=kernel)
-        C1_est, _ = scaleinvariance.two_point_intermittency_exponent(data, axis=1)
+        C1_est, _ = scaleinvariance.two_point_C1(data, axis=1)
         assert 0.0 <= C1_est <= C1_true + 0.15, \
             f"C1_est={C1_est:.3f}, C1_true={C1_true}, kernel={kernel}"
 
     def test_two_point_intermittency_fbm_near_zero(self):
         # fBm has C1=0; estimate should be very small
         data = make_fbm_circulant(H=0.5)
-        C1_est, _ = scaleinvariance.two_point_intermittency_exponent(data, axis=1)
+        C1_est, _ = scaleinvariance.two_point_C1(data, axis=1)
         assert abs(C1_est) < 0.01, f"C1_est={C1_est:.4f} for fBm, expected ~0"
 
     @pytest.mark.parametrize("C1_true", [0.05, 0.15])
-    def test_compute_K_q_function_C1(self, C1_true):
+    def test_K_empirical_C1(self, C1_true):
         data = make_fif(H=0.5, C1=C1_true, alpha=1.8)
-        _, _, _, C1_fit, _ = scaleinvariance.compute_K_q_function(data, axis=1)
+        _, _, _, C1_fit, _ = scaleinvariance.K_empirical(data, axis=1)
         assert 0.0 <= C1_fit <= C1_true + 0.2, \
             f"C1_fit={C1_fit:.3f}, C1_true={C1_true}"
 
@@ -112,6 +112,6 @@ class TestFBmNonIntermittentKq:
 
     def test_K_near_zero_for_fbm(self):
         data = make_fbm_circulant(H=0.5)
-        q_values, K_emp, *_ = scaleinvariance.compute_K_q_function(data, axis=1)
+        q_values, K_emp, *_ = scaleinvariance.K_empirical(data, axis=1)
         assert np.all(np.abs(K_emp) < 0.15), \
             f"Max |K(q)|={np.max(np.abs(K_emp)):.3f}, expected ~0 for fBm"

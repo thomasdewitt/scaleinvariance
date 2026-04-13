@@ -75,11 +75,11 @@ def _run_analysis(test_signal_1d, test_signal_2d, fif_signal):
     results = {}
 
     # --- Structure function ---
-    lags, vals = si.structure_function_analysis(test_signal_1d, order=1, axis=0)
+    lags, vals = si.structure_function(test_signal_1d, order=1, axis=0)
     results['analysis_sf_lags'] = lags
     results['analysis_sf_values'] = vals
 
-    lags, vals = si.structure_function_analysis(test_signal_1d, order=2, axis=0)
+    lags, vals = si.structure_function(test_signal_1d, order=2, axis=0)
     results['analysis_sf_lags_o2'] = lags
     results['analysis_sf_values_o2'] = vals
 
@@ -88,11 +88,11 @@ def _run_analysis(test_signal_1d, test_signal_2d, fif_signal):
     results['analysis_sf_unc'] = np.float64(unc)
 
     # --- Haar fluctuation ---
-    lags, vals = si.haar_fluctuation_analysis(test_signal_1d, order=1, axis=0)
+    lags, vals = si.haar_fluctuation(test_signal_1d, order=1, axis=0)
     results['analysis_haar_lags'] = lags
     results['analysis_haar_values'] = vals
 
-    lags, vals = si.haar_fluctuation_analysis(test_signal_1d, order=2, axis=0)
+    lags, vals = si.haar_fluctuation(test_signal_1d, order=2, axis=0)
     results['analysis_haar_lags_o2'] = lags
     results['analysis_haar_values_o2'] = vals
 
@@ -101,7 +101,7 @@ def _run_analysis(test_signal_1d, test_signal_2d, fif_signal):
     results['analysis_haar_unc'] = np.float64(unc)
 
     # --- Spectral ---
-    freq, psd = si.spectral_analysis(test_signal_1d, axis=0)
+    freq, psd = si.power_spectrum_binned(test_signal_1d, axis=0)
     results['analysis_spec_freq'] = freq
     results['analysis_spec_psd'] = psd
 
@@ -111,7 +111,7 @@ def _run_analysis(test_signal_1d, test_signal_2d, fif_signal):
 
     # --- K(q) function (on FIF signal — it's multifractal) ---
     q_vals = np.arange(0.1, 2.51, 0.1)
-    kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.compute_K_q_function(
+    kq_q, kq_K, kq_H, kq_C1, kq_alpha = si.K_empirical(
         fif_signal, q_values=q_vals, scaling_method='structure_function',
         hurst_fit_method='fixed'
     )
@@ -122,27 +122,27 @@ def _run_analysis(test_signal_1d, test_signal_2d, fif_signal):
     results['analysis_kq_alpha'] = np.float64(kq_alpha)
 
     # --- Two-point intermittency ---
-    c1, unc = si.two_point_intermittency_exponent(fif_signal)
+    c1, unc = si.two_point_C1(fif_signal)
     results['analysis_c1_val'] = np.float64(c1)
     results['analysis_c1_unc'] = np.float64(unc)
 
     # --- 2D analysis ---
-    lags, vals = si.structure_function_analysis(test_signal_2d, order=1, axis=0)
+    lags, vals = si.structure_function(test_signal_2d, order=1, axis=0)
     results['analysis_sf2d_lags'] = lags
     results['analysis_sf2d_values'] = vals
 
-    lags, vals = si.haar_fluctuation_analysis(test_signal_2d, order=1, axis=0)
+    lags, vals = si.haar_fluctuation(test_signal_2d, order=1, axis=0)
     results['analysis_haar2d_lags'] = lags
     results['analysis_haar2d_values'] = vals
 
-    freq, psd = si.spectral_analysis(test_signal_2d, axis=0)
+    freq, psd = si.power_spectrum_binned(test_signal_2d, axis=0)
     results['analysis_spec2d_freq'] = freq
     results['analysis_spec2d_psd'] = psd
 
     # --- Haar with NaN data ---
     test_nan = test_signal_1d.copy()
     test_nan[100:110] = np.nan
-    lags, vals = si.haar_fluctuation_analysis(test_nan, order=1, axis=0, nan_behavior='ignore')
+    lags, vals = si.haar_fluctuation(test_nan, order=1, axis=0, nan_behavior='ignore')
     results['analysis_haar_nan_lags'] = lags
     results['analysis_haar_nan_values'] = vals
 
