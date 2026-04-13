@@ -13,7 +13,7 @@ Simulation and analysis tools for **multifractal fields and time series**. Versi
 
 ## Critical Usage Note
 
-**When analyzing multiple arrays (e.g., multiple time series or spatial snapshots), concatenate them along a NEW axis and pass ALL AT ONCE.** Analysis functions are NOT linear operations - do NOT loop and accumulate results.
+**When analyzing multiple arrays (e.g., multiple time series or spatial snapshots), concatenate them along a NEW axis and pass ALL AT ONCE whenever possible.** Analysis functions are, in general, NOT linear operations. 
 
 ```python
 import numpy as np
@@ -36,6 +36,8 @@ H, err = scaleinvariance.structure_function_hurst(stacked, axis=1)  # Analyze al
 
 This applies to all analysis functions: `structure_function_hurst`, `haar_fluctuation_hurst`, `spectral_hurst`, `two_point_C1`, and their underlying scaling functions (`structure_function`, `haar_fluctuation`, `power_spectrum_binned`).
 
+If you are attempting to analyze a large dataset that does not fit in memory, you MUST carefully consider whether the specific function you are using is linear. In the above example, the Hurst exponent is computed using a linear regression and is NOT linear. Other functions, such as `structure_function` with `order=1` and assuming each input array is the same size, can sometimes return linear outputs. You may have to do your own linear regression. You MUST carefully consider cases where loops are necessary (is the function linear? is each input chunk the same size? does `nan` prevalence change?), and when you are unsure explain the situation to your user!
+
 ## When to Use Which Function
 
 ### Hurst Exponent Estimation
@@ -52,29 +54,29 @@ All three methods estimate the same H parameter but may give slightly different 
 
 **Usually, the *_hurst methods above are preferred to the functions in this section, as the spectrum/scaling function may be obtained from them using a kwarg described below**
 
-| Task                      | Function                      | Notes                               |
-| ------------------------- | ----------------------------- | ----------------------------------- |
-| Structure function values | `structure_function`          | Returns lags and S_n(r) values      |
-| Haar fluctuation values   | `haar_fluctuation`            | Returns lags and fluctuation values |
-| Power spectral density    | `power_spectrum_binned`       | Returns binned frequencies and PSD  |
+| Task                      | Function                | Notes                               |
+| ------------------------- | ----------------------- | ----------------------------------- |
+| Structure function values | `structure_function`    | Returns lags and S_n(r) values      |
+| Haar fluctuation values   | `haar_fluctuation`      | Returns lags and fluctuation values |
+| Power spectral density    | `power_spectrum_binned` | Returns binned frequencies and PSD  |
 
 ### Intermittency Analysis
 
-| Task                      | Function      | Notes                                                                  |
-| ------------------------- | ------------- | ---------------------------------------------------------------------- |
-| Estimate C1 parameter     | `two_point_C1`| Uses two-point scaling to estimate intermittency                       |
-| Analytic K(q) function    | `K_analytic`  | Returns Lovejoy and Schertzer's K(q) = (C1/(alpha-1)) * (q^alpha - q) |
-| Empirical K(q) from data  | `K_empirical` | Estimates K(q) scaling function from data across range of q values     |
+| Task                     | Function       | Notes                                                                 |
+| ------------------------ | -------------- | --------------------------------------------------------------------- |
+| Estimate C1 parameter    | `two_point_C1` | Uses two-point scaling to estimate intermittency                      |
+| Analytic K(q) function   | `K_analytic`   | Returns Lovejoy and Schertzer's K(q) = (C1/(alpha-1)) * (q^alpha - q) |
+| Empirical K(q) from data | `K_empirical`  | Estimates K(q) scaling function from data across range of q values    |
 
 ### Simulation
 
-| Task                            | Function            | Notes                                          |
-| ------------------------------- | ------------------- | ---------------------------------------------- |
-| 1D multifractal (FIF)           | `FIF_1D`            | Fractionally integrated flux with H, C1, alpha |
-| N-D multifractal (FIF)          | `FIF_ND`            | 2D, 3D, etc. with GSI support                  |
-| 1D fBm (spectral)               | `fBm_1D_circulant`  | Fast spectral synthesis, periodic              |
-| N-D fBm (spectral)              | `fBm_ND_circulant`  | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
-| 1D fBm (fractional integration) | `fBm_1D`            | Extended H range (-0.5, 1.5)                   |
+| Task                            | Function           | Notes                                          |
+| ------------------------------- | ------------------ | ---------------------------------------------- |
+| 1D multifractal (FIF)           | `FIF_1D`           | Fractionally integrated flux with H, C1, alpha |
+| N-D multifractal (FIF)          | `FIF_ND`           | 2D, 3D, etc. with GSI support                  |
+| 1D fBm (spectral)               | `fBm_1D_circulant` | Fast spectral synthesis, periodic              |
+| N-D fBm (spectral)              | `fBm_ND_circulant` | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
+| 1D fBm (fractional integration) | `fBm_1D`           | Extended H range (-0.5, 1.5)                   |
 
 ### Generalized Scale Invariance (GSI)
 
@@ -84,16 +86,16 @@ All three methods estimate the same H parameter but may give slightly different 
 
 ### Backend Control
 
-| Task              | Function                                                       | Notes                                               |
-| ----------------- | -------------------------------------------------------------- | --------------------------------------------------- |
-| Set backend       | `set_backend('numpy')` or `set_backend('torch')`               | Torch is often much faster but is a huge dependency |
-| Get backend       | `get_backend()`                                                | Returns current backend name                        |
-| Set threads       | `set_num_threads(n)`                                           | Default: 90% CPU count                              |
-| Set precision     | `set_numerical_precision('float32')` or `('float64')`          | Default: `'float64'`. Applies to both backends.     |
-| Get precision     | `get_numerical_precision()`                                    | Returns current precision string                    |
-| Set device        | `set_device('cpu')` or `set_device('cuda')`                    | GPU acceleration (torch backend only)               |
-| Get device        | `get_device()`                                                 | Returns current device string                       |
-| Convert to numpy  | `to_numpy(x)`                                                  | Convert backend result to numpy array               |
+| Task             | Function                                              | Notes                                               |
+| ---------------- | ----------------------------------------------------- | --------------------------------------------------- |
+| Set backend      | `set_backend('numpy')` or `set_backend('torch')`      | Torch is often much faster but is a huge dependency |
+| Get backend      | `get_backend()`                                       | Returns current backend name                        |
+| Set threads      | `set_num_threads(n)`                                  | Default: 90% CPU count                              |
+| Set precision    | `set_numerical_precision('float32')` or `('float64')` | Default: `'float64'`. Applies to both backends.     |
+| Get precision    | `get_numerical_precision()`                           | Returns current precision string                    |
+| Set device       | `set_device('cpu')` or `set_device('cuda')`           | GPU acceleration (torch backend only)               |
+| Get device       | `get_device()`                                        | Returns current device string                       |
+| Convert to numpy | `to_numpy(x)`                                         | Convert backend result to numpy array               |
 
 ## Function Signatures
 
@@ -384,15 +386,13 @@ avoid per-operation CPU<->GPU transfers.
 ### Overflow guards in FIF simulations
 
 `FIF_1D` and `FIF_ND` clip the internal log-flux to a precision-aware
-exponent range (`(-88, 88)` for float32, `(-700, 700)` for float64) before
+exponent range (`(-88.7, 88.7)` for float32, `(-709, 709)` for float64) before
 calling `exp`. This prevents unbounded cascade amplitudes from producing
 `inf`. If any samples hit the clip, a `RuntimeWarning` is emitted naming
 the number of saturated samples — treat it as a signal to lower `C1` or
-raise precision. For well-behaved parameter ranges (e.g. `C1 <= 0.5`,
-`alpha >= 1.5`) the clip never engages and outputs are identical to the
-unclipped computation.
+raise precision. For large simulations and `alpha != 2`, expect clipping. This is the nature of levy variables, and little can be done.
 
-User-supplied `scale_metric` arrays in `FIF_ND` are now validated as
+User-supplied `scale_metric` arrays in `FIF_ND` are validated as
 finite and strictly positive before being used.
 
 ## Complete Examples
