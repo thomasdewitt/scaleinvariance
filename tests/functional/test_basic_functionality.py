@@ -12,8 +12,11 @@ from scaleinvariance import (
     FIF_1D, FIF_ND,
     structure_function_hurst, haar_fluctuation_hurst, spectral_hurst,
     structure_function, haar_fluctuation, power_spectrum_binned,
-    set_backend, get_backend
+    set_backend, get_backend, get_numerical_precision
 )
+
+def _expected_dtype():
+    return np.float32 if get_numerical_precision() == 'float32' else np.float64
 
 
 class TestfBmSimulations:
@@ -28,7 +31,7 @@ class TestfBmSimulations:
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
         assert not np.any(np.isinf(result)), "Output contains infinite values"
-        assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected dtype {_expected_dtype()}, got {result.dtype}"
 
     @pytest.mark.parametrize("H", [0.1, 0.3, 0.5, 0.7, 0.9])
     @pytest.mark.parametrize("periodic", [True, False])
@@ -54,7 +57,7 @@ class TestfBmSimulations:
         assert result.shape == size, f"Expected shape {size}, got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
         assert not np.any(np.isinf(result)), "Output contains infinite values"
-        assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected dtype {_expected_dtype()}, got {result.dtype}"
 
     @pytest.mark.parametrize("H", [-0.3, 0.0, 0.3, 0.7, 1.0, 1.3])
     @pytest.mark.parametrize("causal", [True, False])
@@ -66,7 +69,7 @@ class TestfBmSimulations:
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
         assert not np.any(np.isinf(result)), "Output contains infinite values"
-        assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected dtype {_expected_dtype()}, got {result.dtype}"
 
     def test_fBm_1D_default_kernel_is_ls2010(self):
         """Default fBm_1D kernel should match explicit LS2010 selection."""
@@ -107,7 +110,7 @@ class TestFIFSimulations:
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
         assert not np.any(np.isinf(result)), "Output contains infinite values"
-        assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected dtype {_expected_dtype()}, got {result.dtype}"
 
     @pytest.mark.parametrize("periodic", [True, False])
     def test_FIF_1D_periodic(self, periodic):
@@ -146,7 +149,7 @@ class TestFIFSimulations:
         assert result.shape == size, f"Expected shape {size}, got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
         assert not np.any(np.isinf(result)), "Output contains infinite values"
-        assert result.dtype == np.float64, f"Expected dtype float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected dtype {_expected_dtype()}, got {result.dtype}"
 
     def test_FIF_ND_C1_zero_routes_to_fBm(self):
         """Test that C1=0 routes to fBm for N-D case."""
@@ -260,7 +263,7 @@ class TestAnalysisFunctions:
         assert len(sf_values) == len(lags), "Lags and values length mismatch"
         assert not np.all(np.isnan(sf_values)), "All SF values are NaN"
         assert np.issubdtype(lags.dtype, np.integer), f"Expected lags dtype integer, got {lags.dtype}"
-        assert sf_values.dtype == np.float64, f"Expected values dtype float64, got {sf_values.dtype}"
+        assert sf_values.dtype == np.float64, f"Expected values dtype float64, got {sf_values.dtype}"  # analysis always float64
 
     def test_haar_fluctuation(self, test_data_1d):
         """Test Haar fluctuation analysis."""
@@ -330,7 +333,7 @@ class TestAnalysisFunctions:
 
 
 class TestBackendConsistency:
-    """Test that backend operations maintain float64 dtype."""
+    """Test that backend operations maintain the active precision dtype."""
 
     @pytest.fixture(params=['numpy', 'torch'], autouse=True)
     def setup_backend(self, request):
@@ -350,24 +353,24 @@ class TestBackendConsistency:
         set_backend(original_backend)
 
     def test_fif_1d_dtype_consistency(self):
-        """Ensure FIF_1D always returns float64."""
+        """Ensure FIF_1D returns active precision dtype."""
         result = FIF_1D(128, alpha=1.8, C1=0.1, H=0.3)
-        assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected {_expected_dtype()}, got {result.dtype}"
 
     def test_fif_nd_dtype_consistency(self):
-        """Ensure FIF_ND always returns float64."""
+        """Ensure FIF_ND returns active precision dtype."""
         result = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3)
-        assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected {_expected_dtype()}, got {result.dtype}"
 
     def test_fbm_1d_dtype_consistency(self):
-        """Ensure fBm_1D always returns float64."""
+        """Ensure fBm_1D returns active precision dtype."""
         result = fBm_1D(128, H=0.7)
-        assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected {_expected_dtype()}, got {result.dtype}"
 
     def test_fbm_nd_dtype_consistency(self):
-        """Ensure fBm_ND always returns float64."""
+        """Ensure fBm_ND returns active precision dtype."""
         result = fBm_ND_circulant((64, 64), H=0.7)
-        assert result.dtype == np.float64, f"Expected float64, got {result.dtype}"
+        assert result.dtype == _expected_dtype(), f"Expected {_expected_dtype()}, got {result.dtype}"
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ All three methods estimate the same H parameter but may give slightly different 
 | Set backend      | `set_backend('numpy')` or `set_backend('torch')`      | Torch is often much faster but is a huge dependency |
 | Get backend      | `get_backend()`                                       | Returns current backend name                        |
 | Set threads      | `set_num_threads(n)`                                  | Default: 90% CPU count                              |
-| Set precision    | `set_numerical_precision('float32')` or `('float64')` | Default: `'float64'`. Applies to both backends.     |
+| Set precision    | `set_numerical_precision('float32')` or `('float64')` | Default: `'float32'`. Applies to both backends.     |
 | Get precision    | `get_numerical_precision()`                           | Returns current precision string                    |
 | Set device       | `set_device('cpu')` or `set_device('cuda')`           | GPU acceleration (torch backend only)               |
 | Get device       | `get_device()`                                        | Returns current device string                       |
@@ -373,10 +373,10 @@ scaleinvariance.set_device('cpu')    # back to CPU
 # Control threading
 scaleinvariance.set_num_threads(8)
 
-# Control numerical precision (default 'float64'). Halves memory for
-# simulations at the cost of float32 accuracy. Applies to both backends.
-scaleinvariance.set_numerical_precision('float32')
-assert scaleinvariance.get_numerical_precision() == 'float32'
+# Control numerical precision (default 'float32'). Doubles precision
+# at the cost of 2x memory. Applies to both backends.
+scaleinvariance.set_numerical_precision('float64')
+assert scaleinvariance.get_numerical_precision() == 'float64'
 ```
 
 All public functions return NumPy arrays regardless of backend. Internally,

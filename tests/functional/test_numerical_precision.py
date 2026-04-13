@@ -18,7 +18,9 @@ from scaleinvariance import (
     get_numerical_precision, set_numerical_precision,
     to_numpy,
 )
-from scaleinvariance.simulation.FIF import extremal_levy
+from scaleinvariance.simulation.FIF import extremal_levy, periodic_convolve, periodic_convolve_nd
+from scaleinvariance.simulation.kernels import create_kernel_LS2010
+from scaleinvariance import backend as B
 
 
 BACKEND_PRECISION = [
@@ -39,8 +41,8 @@ def _real_np_dtype(precision):
 
 class TestPrecisionAPI:
 
-    def test_default_is_float64(self):
-        assert get_numerical_precision() == 'float64'
+    def test_default_is_float32(self):
+        assert get_numerical_precision() == 'float32'
 
     def test_round_trip(self):
         original = get_numerical_precision()
@@ -262,3 +264,125 @@ class TestScaleMetricValidation:
             FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
                    scale_metric=bad, scale_metric_dim=2.0,
                    kernel_construction_method_observable='LS2010')
+
+
+# ---------------------------------------------------------------------------
+# FIF clip-guard integration: spike-driven trigger / no-trigger
+# ---------------------------------------------------------------------------
+
+class TestClipWarningFIF:
+    """Verify FIF_1D / FIF_ND emit RuntimeWarning exactly when a noise spike
+    is extreme enough to saturate the exp-clip guard, and stay silent when
+    the spike is just within bounds.  Output must be finite in both cases."""
+
+    @staticmethod
+    def _kernel_peak_1d(size, alpha):
+        """Max |kernel| for the FIF_1D flux kernel (gain for a unit spike)."""
+        alpha_prime = 1.0 / (1.0 - 1.0 / alpha)
+        kernel = create_kernel_LS2010(
+            size, -1.0 / alpha_prime, -1.0 / alpha,
+            causal=False, outer_scale=size, outer_scale_width_factor=2.0,
+            final_power=1.0 / (alpha - 1.0))
+        return float(np.max(np.abs(to_numpy(kernel))))
+
+    @staticmethod
+    def _kernel_peak_nd(size, alpha):
+        """Max |kernel| for the FIF_ND flux kernel (gain for a unit spike)."""
+        ndim = len(size)
+        alpha_prime = 1.0 / (1.0 - 1.0 / alpha)
+        kernel = create_kernel_LS2010(
+            size, -float(ndim) / alpha_prime, -float(ndim) / alpha,
+            causal=False, outer_scale=max(size), outer_scale_width_factor=2.0,
+            final_power=1.0 / (alpha - 1.0))
+        return float(np.max(np.abs(to_numpy(kernel))))
+
+    @staticmethod
+    def _spike_threshold(kernel_peak, C1, alpha):
+        """Spike amplitude placing the scaled convolution peak at the clip limit.
+
+        FIF scales: scaled = integrated * C1^(1/alpha)
+        For a single spike V, peak of integrated = V * kernel_peak.
+        Threshold: V = clip_limit / (kernel_peak * C1^(1/alpha))
+        """
+        _, clip_hi = B.exp_clip_limits()
+        return clip_hi / (kernel_peak * C1 ** (1.0 / alpha))
+
+    # -- FIF_1D ---------------------------------------------------------------
+
+    @pytest.mark.parametrize("alpha,C1", [(1.8, 0.1), (1.5, 0.2)])
+    @pytest.mark.parametrize("size", [128, 2**20])
+    def test_FIF_1D_spike_triggers_warning(self, size, alpha, C1):
+        kpeak = self._kernel_peak_1d(size, alpha)
+        V = self._spike_threshold(kpeak, C1, alpha)
+
+        noise = np.zeros(size)
+        noise[0] = V * 1.05  # 5% over boundary
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            result = FIF_1D(size, alpha, C1, H=0.5, levy_noise=noise, periodic=True)
+
+        assert any(
+            issubclass(w.category, RuntimeWarning) and 'saturated' in str(w.message)
+            for w in caught
+        ), f"Expected clipping warning for spike at {V * 1.05:.1f} (threshold {V:.1f})"
+        assert np.all(np.isfinite(result)), "Output must be finite even when clipping"
+
+    @pytest.mark.parametrize("alpha,C1", [(1.8, 0.1), (1.5, 0.2)])
+    @pytest.mark.parametrize("size", [128, 2**20])
+    def test_FIF_1D_spike_no_warning(self, size, alpha, C1):
+        kpeak = self._kernel_peak_1d(size, alpha)
+        V = self._spike_threshold(kpeak, C1, alpha)
+
+        noise = np.zeros(size)
+        noise[0] = V * 0.95  # 5% under boundary
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            result = FIF_1D(size, alpha, C1, H=0.5, levy_noise=noise, periodic=True)
+
+        assert not any(
+            issubclass(w.category, RuntimeWarning) and 'saturated' in str(w.message)
+            for w in caught
+        ), f"Did not expect clipping for spike at {V * 0.95:.1f} (threshold {V:.1f})"
+        assert np.all(np.isfinite(result)), "Output must be finite without clipping"
+
+    # -- FIF_ND ---------------------------------------------------------------
+
+    @pytest.mark.parametrize("alpha,C1", [(1.8, 0.1), (1.5, 0.2)])
+    @pytest.mark.parametrize("size", [(32, 32), (1024, 1024)])
+    def test_FIF_ND_spike_triggers_warning(self, size, alpha, C1):
+        kpeak = self._kernel_peak_nd(size, alpha)
+        V = self._spike_threshold(kpeak, C1, alpha)
+
+        noise = np.zeros(size)
+        noise[0, 0] = V * 1.05
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            result = FIF_ND(size, alpha, C1, H=0.5, levy_noise=noise, periodic=True)
+
+        assert any(
+            issubclass(w.category, RuntimeWarning) and 'saturated' in str(w.message)
+            for w in caught
+        ), f"Expected clipping warning for spike at {V * 1.05:.1f} (threshold {V:.1f})"
+        assert np.all(np.isfinite(result)), "Output must be finite even when clipping"
+
+    @pytest.mark.parametrize("alpha,C1", [(1.8, 0.1), (1.5, 0.2)])
+    @pytest.mark.parametrize("size", [(32, 32), (1024, 1024)])
+    def test_FIF_ND_spike_no_warning(self, size, alpha, C1):
+        kpeak = self._kernel_peak_nd(size, alpha)
+        V = self._spike_threshold(kpeak, C1, alpha)
+
+        noise = np.zeros(size)
+        noise[0, 0] = V * 0.95
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            result = FIF_ND(size, alpha, C1, H=0.5, levy_noise=noise, periodic=True)
+
+        assert not any(
+            issubclass(w.category, RuntimeWarning) and 'saturated' in str(w.message)
+            for w in caught
+        ), f"Did not expect clipping for spike at {V * 0.95:.1f} (threshold {V:.1f})"
+        assert np.all(np.isfinite(result)), "Output must be finite without clipping"

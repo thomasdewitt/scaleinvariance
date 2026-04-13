@@ -8,7 +8,7 @@ tensors (on the active device); call :func:`to_numpy` at public API boundaries
 to convert back.
 
 Numerical precision is controlled by ``set_numerical_precision('float32'|'float64')``
-and applies to both numpy and torch backends. The default is ``'float64'``.
+and applies to both numpy and torch backends. The default is ``'float32'``.
 """
 
 import numpy as np
@@ -25,7 +25,7 @@ except ImportError:
 # Global state
 _backend = 'numpy'  # Default backend
 _num_threads = int(os.cpu_count() * 0.9) if os.cpu_count() else 4
-_numerical_precision = 'float64'  # Default precision
+_numerical_precision = 'float32'  # Default precision
 _device = 'cpu'
 _device_obj = torch.device('cpu') if _torch_available else None
 
@@ -761,6 +761,14 @@ def std(x, axis=None):
         if axis is None:
             return torch.std(x_torch, correction=0)
         return torch.std(x_torch, dim=axis, correction=0)
+
+
+def max(x):
+    """Maximum value of array (scalar)."""
+    if _backend == 'numpy':
+        return np.max(x)
+    else:
+        return torch.max(_to_torch(x))
 
 
 def sum(x, axis=None):

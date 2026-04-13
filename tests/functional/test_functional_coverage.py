@@ -90,7 +90,7 @@ class TestFIFND:
 
     def test_2d_mean_near_one(self):
         fif = scaleinvariance.FIF_ND((64, 64), 1.8, 0.1, H=0.3)
-        assert abs(np.mean(fif) - 1.0) < 1e-10
+        assert abs(np.mean(fif) - 1.0) < 1e-4
 
     def test_periodic_tuple(self):
         fif = scaleinvariance.FIF_ND((64, 64), 1.8, 0.1, H=0.3, periodic=(True, False))
