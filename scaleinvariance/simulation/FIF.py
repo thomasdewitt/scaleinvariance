@@ -67,7 +67,7 @@ def _extremal_levy_core(alpha, size=1):
     return sample
 
 
-def extremal_levy(alpha, size=1):
+def extremal_levy(alpha, size=1, seed=None):
     """
     Generate random samples from an extremal Lévy distribution using a modified
     Chambers–Mallows–Stuck method.
@@ -78,10 +78,18 @@ def extremal_levy(alpha, size=1):
     Parameters:
         alpha (float): Stability parameter in (0, 2)
         size (int): Number of samples to generate (default is 1)
+        seed (int, optional): Random seed for reproducibility
 
     Returns:
         numpy.ndarray: Array of generated extremal Lévy random variables
     """
+    if seed is not None:
+        np.random.seed(seed)
+        try:
+            import torch
+            torch.manual_seed(seed)
+        except ImportError:
+            pass
     return B.to_numpy(_extremal_levy_core(alpha, size))
 
 # Convolutions

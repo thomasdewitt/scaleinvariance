@@ -237,6 +237,32 @@ scaleinvariance.FIF_ND(
 ) -> numpy.ndarray   # Normalized by mean
 ```
 
+### Reproducibility
+
+The recommended way to produce reproducible FIF simulations is to explicitly generate the Lévy noise with a seed and pass it to the FIF function via the `levy_noise` parameter:
+
+```python
+import scaleinvariance
+from scaleinvariance.simulation.FIF import extremal_levy
+
+# Generate reproducible noise
+noise = extremal_levy(alpha=1.8, size=4096, seed=42)
+
+# Pass noise to FIF — same noise always gives the same result
+fif = scaleinvariance.FIF_1D(4096, alpha=1.8, C1=0.1, H=0.4, levy_noise=noise)
+```
+
+This approach is preferred over setting a global random seed because it makes the reproducibility intent explicit and avoids side effects on other random state.
+
+```python
+# extremal_levy signature
+scaleinvariance.simulation.FIF.extremal_levy(
+    alpha,         # Lévy stability parameter in (0, 2)
+    size=1,        # Number of samples
+    seed=None      # Optional random seed for reproducibility
+) -> numpy.ndarray
+```
+
 ### fBm Simulation
 
 Circulant methods are preferred. fBm uses a convolution with a power law kernel similar to FIF, but this is not as accurate. However, fBm_1D can be used to limit the outer scale or control the noise, or make causal simulations, for example.
