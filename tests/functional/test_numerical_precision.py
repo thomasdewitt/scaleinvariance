@@ -16,6 +16,7 @@ from scaleinvariance import (
     fBm_1D, fBm_1D_circulant, fBm_ND_circulant,
     get_backend, set_backend,
     get_numerical_precision, set_numerical_precision,
+    to_numpy,
 )
 from scaleinvariance.simulation.FIF import extremal_levy
 
@@ -185,6 +186,7 @@ class TestExpClipGuard:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter('always')
                 flux = _clip_and_exp_flux(scaled, "test_case")
+            flux = to_numpy(flux)
             assert np.all(np.isfinite(flux))
             assert any(
                 issubclass(w.category, RuntimeWarning)
@@ -204,6 +206,7 @@ class TestExpClipGuard:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter('always')
                 flux = _clip_and_exp_flux(scaled, "test_case")
+            flux = to_numpy(flux)
             assert np.all(np.isfinite(flux))
             # exp of moderate inputs never saturates at float64.
             assert not any(
