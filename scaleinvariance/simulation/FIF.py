@@ -429,10 +429,19 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     del scaled
 
     if H == 0:
-        # Normalize - slice first (if periodic), then normalize by mean
+        # Integrator is identity (H=0 after any remap). Skip the observable
+        # kernel entirely. Two sub-cases:
+        #   H_int == 0: original H was 0 → return unit-mean flux.
+        #   H_int == -1: original H was -1 (integrate with identity, then
+        #     differentiate) → diff the flux and return zero-mean.
         if not periodic:
-            flux = flux[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
-        flux = flux / B.mean(flux)
+            flux = flux[:size//2]
+        if H_int == -1:
+            flux = B.diff(flux)
+            flux = B.concatenate([flux, flux[-1:]])
+            flux = flux - B.mean(flux)
+        else:
+            flux = flux / B.mean(flux)
         return B.to_numpy(flux)
 
     # Observable kernel (kernel 2) real-space power-law parameters.

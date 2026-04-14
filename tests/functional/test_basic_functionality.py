@@ -145,6 +145,17 @@ class TestFIFSimulations:
             FIF_1D(128, alpha=1.8, C1=0.1, H=2.0, causal=True,
                    kernel_construction_method_observable='LS2010')
 
+    def test_FIF_1D_H_minus_one_returns_differenced_zero_mean(self):
+        """H=-1 with LS2010 must return a differenced, zero-mean field, not
+        the unit-mean flux (previous shortcut bug)."""
+        size = 512
+        result = FIF_1D(size, alpha=1.8, C1=0.1, H=-1.0, causal=True, periodic=True,
+                        kernel_construction_method_observable='LS2010')
+        assert result.shape == (size,)
+        assert np.all(np.isfinite(result))
+        # Differenced / zero-mean contract: mean is close to zero, not 1.
+        assert abs(np.mean(result)) < 1e-4, f"mean={np.mean(result)}, expected ~0"
+
     @pytest.mark.parametrize("H", [-0.5, 2.0])
     def test_FIF_ND_spectral_allows_any_H(self, H):
         """Spectral observable path lifts the [0, 1] restriction for ND."""
