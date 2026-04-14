@@ -130,6 +130,35 @@ class TestFIFSimulations:
         assert result.shape == (size,), f"Expected shape ({size},), got {result.shape}"
         assert not np.any(np.isnan(result)), "Output contains NaN values"
 
+    @pytest.mark.parametrize("H", [-2.0, 2.0, 3.5])
+    def test_FIF_1D_spectral_allows_any_H(self, H):
+        """Spectral observable path lifts the |H| <= 1 restriction."""
+        size = 128
+        result = FIF_1D(size, alpha=1.8, C1=0.1, H=H, causal=False, periodic=True,
+                        kernel_construction_method_observable='spectral')
+        assert result.shape == (size,)
+        assert np.all(np.isfinite(result))
+
+    def test_FIF_1D_ls2010_still_rejects_out_of_range_H(self):
+        """Non-spectral paths still enforce |H| <= 1."""
+        with pytest.raises(ValueError, match="between -1 and 1"):
+            FIF_1D(128, alpha=1.8, C1=0.1, H=2.0, causal=True,
+                   kernel_construction_method_observable='LS2010')
+
+    @pytest.mark.parametrize("H", [-0.5, 2.0])
+    def test_FIF_ND_spectral_allows_any_H(self, H):
+        """Spectral observable path lifts the [0, 1] restriction for ND."""
+        size = (64, 64)
+        result = FIF_ND(size, alpha=1.8, C1=0.1, H=H, periodic=True,
+                        kernel_construction_method_observable='spectral')
+        assert result.shape == size
+        assert np.all(np.isfinite(result))
+
+    def test_FIF_ND_ls2010_still_rejects_negative_H(self):
+        with pytest.raises(ValueError, match="between 0 and 1"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=-0.5, periodic=True,
+                   kernel_construction_method_observable='LS2010')
+
     @pytest.mark.parametrize("alpha,C1,H", [
         (1.5, 0.05, 0.3),
         (1.8, 0.1, 0.5),

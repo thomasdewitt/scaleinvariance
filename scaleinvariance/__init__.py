@@ -27,7 +27,16 @@ from .analysis import (
     structure_function_analysis, haar_fluctuation_analysis, spectral_analysis,
     two_point_intermittency_exponent, K, compute_K_q_function,
 )
-from .simulation import FIF_1D, FIF_ND, fBm_1D, fBm_1D_circulant, fBm_ND_circulant, canonical_scale_metric
+from .simulation import (
+    FIF_1D,
+    FIF_ND,
+    fBm_1D,
+    fBm_1D_circulant,
+    fBm_ND_circulant,
+    canonical_scale_metric,
+    fractional_integral_spectral,
+    broken_fractional_integral_spectral,
+)
 
 # Backend configuration
 from .backend import (

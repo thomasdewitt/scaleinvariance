@@ -70,13 +70,15 @@ All three methods estimate the same H parameter but may give slightly different 
 
 ### Simulation
 
-| Task                            | Function           | Notes                                          |
-| ------------------------------- | ------------------ | ---------------------------------------------- |
-| 1D multifractal (FIF)           | `FIF_1D`           | Fractionally integrated flux with H, C1, alpha |
-| N-D multifractal (FIF)          | `FIF_ND`           | 2D, 3D, etc. with GSI support                  |
-| 1D fBm (spectral)               | `fBm_1D_circulant` | Fast spectral synthesis, periodic              |
-| N-D fBm (spectral)              | `fBm_ND_circulant` | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
-| 1D fBm (fractional integration) | `fBm_1D`           | Extended H range (-0.5, 1.5)                   |
+| Task                            | Function                               | Notes                                          |
+| ------------------------------- | -------------------------------------- | ---------------------------------------------- |
+| 1D multifractal (FIF)           | `FIF_1D`                               | Fractionally integrated flux with H, C1, alpha |
+| N-D multifractal (FIF)          | `FIF_ND`                               | 2D, 3D, etc. with GSI support                  |
+| 1D fBm (spectral)               | `fBm_1D_circulant`                     | Fast spectral synthesis, periodic              |
+| N-D fBm (spectral)              | `fBm_ND_circulant`                     | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
+| 1D fBm (fractional integration) | `fBm_1D`                               | Extended H range (-0.5, 1.5)                   |
+| Spectral fractional integration | `fractional_integral_spectral`         | Isotropic Fourier kernel, periodic, any real H |
+| Two-regime (broken) fractional integration | `broken_fractional_integral_spectral` | Two Hurst exponents joined at a wavelength |
 
 ### Generalized Scale Invariance (GSI)
 
@@ -208,7 +210,9 @@ scaleinvariance.FIF_1D(
     alpha,                     # Levy stability parameter in [0.5, 2], != 1
     C1,                        # Codimension of mean (intermittency), must be >= 0
                                # C1 = 0 routes to fBm (requires causal=False)
-    H,                         # Hurst exponent in (-1, 1)
+    H,                         # Hurst exponent. 'spectral' path: any real (with
+                               # overflow guard). 'LS2010'/'naive'/'spectral_odd'
+                               # paths: H in [-1, 1] (H<0 via diff).
     levy_noise=None,           # Pre-generated noise for reproducibility
     causal=False,              # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
@@ -216,7 +220,7 @@ scaleinvariance.FIF_1D(
     kernel_construction_method_flux='LS2010',        # 'LS2010' or 'naive'
     kernel_construction_method_observable='spectral', # 'spectral', 'LS2010', 'naive', or 'spectral_odd'
     periodic=True              # Full periodic output; set False to double internally and crop
-) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0)
+) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0 on non-spectral paths)
 ```
 
 ```python
@@ -225,7 +229,8 @@ scaleinvariance.FIF_ND(
     alpha,                     # Levy stability parameter in [0.5, 2], != 1
     C1,                        # Codimension of mean (intermittency), must be >= 0
                                # C1 = 0 routes to fBm_ND_circulant()
-    H,                         # Hurst exponent in (0, 1)
+    H,                         # Hurst exponent. 'spectral' path: any real
+                               # (with overflow guard). 'LS2010' path: H in [0, 1].
     levy_noise=None,           # Pre-generated noise for reproducibility
     outer_scale=None,          # Large-scale cutoff (default: max(size))
     outer_scale_width_factor=2.0,  # Transition width control
@@ -296,6 +301,34 @@ scaleinvariance.fBm_1D(
 ) -> numpy.ndarray   # Zero mean, unit std
 ```
 
+### Spectral Fractional Integration
+
+Standalone spectral fractional integrators. Both apply an isotropic Fourier-space power-law kernel via `rfftn`/`irfftn` — i.e. circular convolution (**periodic boundaries**). They work on 1D or N-D real signals. The DC bin of the kernel is filled from the nearest non-DC bin (no spectral notch at DC), so a positive-valued input with significant mean (e.g. a FIF unit-mean flux) stays positive after integration. Note this means they are **not mean-preserving** — the output mean is scaled relative to the input mean by `~outer_scale**H`.
+
+```python
+scaleinvariance.fractional_integral_spectral(
+    signal,            # Real 1D or N-D array
+    H,                 # Hurst exponent. Any finite real != 0.
+                       #   H > 0: integration (redden the spectrum)
+                       #   H < 0: differentiation (blue the spectrum)
+                       #   H == 0: raises ValueError (identity)
+    outer_scale=None,  # Low-freq regularization scale (defaults to max(signal.shape))
+) -> ndarray   # Mean-preserving; same shape as input
+
+scaleinvariance.broken_fractional_integral_spectral(
+    signal,
+    H_small_scale,           # Hurst exponent at small scales (|f| > k_t)
+    H_large_scale,           # Hurst exponent at large scales (|f| <= k_t)
+    transition_wavelength,   # Wavelength in grid units where slope changes.
+                             # k_t = 1 / transition_wavelength.
+    outer_scale=None,
+) -> ndarray   # Mean-preserving; same shape as input
+```
+
+The broken variant uses a piecewise power-law kernel: slope `-H_large_scale` for `|f| <= k_t`, slope `-H_small_scale` for `|f| > k_t`, with a continuity prefactor so the magnitude is continuous at `k_t`. Raises `ValueError` if both exponents are zero; accepts one being zero as a legitimate use (flat on one side, sloped on the other).
+
+**Overflow guard**: both functions raise `OverflowError` before allocating if the peak kernel magnitude `outer_scale ** max_positive_H` would exceed the safe range of the active real dtype. Rough ceilings with default `outer_scale`: float32 tolerates up to `H ≈ 6` at size 2^20 and `H ≈ 4` at size 2^30; float64 tolerates up to `H ≈ 51` at size 2^20. If you need larger H, call `scaleinvariance.set_numerical_precision('float64')` first. Negative H never overflows (kernel ≤ 1 at Nyquist).
+
 ## Kernel Selection
 
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
@@ -343,7 +376,8 @@ fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
 - H = 0.5: Random walk / uncorrelated increments
 - H > 0.5: Persistent / positively correlated increments
 - H < 0.5: Anti-persistent / negatively correlated increments
-- FIF_1D supports H in (-1, 1); negative H gives differenced processes
+- FIF_1D supports H in [-1, 1] on non-spectral paths (negative H gives differenced processes); the default `spectral` observable path supports any real H (modulo an overflow guard at very large positive H)
+- FIF_ND: same — `spectral` path (default) supports any real H; `LS2010` requires H in [0, 1]
 
 ### Intermittency (C1)
 

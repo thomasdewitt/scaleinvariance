@@ -16,8 +16,12 @@ from scaleinvariance.simulation.kernels import (
     create_kernel_spectral_odd,
 )
 from scaleinvariance.simulation.FIF import periodic_convolve
-from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
-from scaleinvariance import get_numerical_precision
+from scaleinvariance.simulation.fractional_integration import (
+    fractional_integral_spectral,
+    broken_fractional_integral_spectral,
+    _isotropic_rfft_frequencies,
+)
+from scaleinvariance import get_numerical_precision, set_numerical_precision
 
 def _expected_dtype():
     return np.float32 if get_numerical_precision() == 'float32' else np.float64
@@ -235,23 +239,11 @@ class TestKernelConsistency:
 class TestFractionalIntegralSpectral:
     """Tests for fractional_integral_spectral."""
 
-    def test_identity_at_H_zero_1d(self):
+    def test_raises_at_H_zero(self):
         rng = np.random.default_rng(0)
         signal = rng.standard_normal(512)
-        out = np.array(fractional_integral_spectral(signal, H=0.0))
-        np.testing.assert_allclose(out, signal, rtol=1e-4, atol=1e-4)
-
-    def test_identity_at_H_zero_2d(self):
-        rng = np.random.default_rng(0)
-        signal = rng.standard_normal((64, 64))
-        out = np.array(fractional_integral_spectral(signal, H=0.0))
-        np.testing.assert_allclose(out, signal, rtol=1e-4, atol=1e-4)
-
-    def test_identity_at_H_zero_3d(self):
-        rng = np.random.default_rng(0)
-        signal = rng.standard_normal((16, 16, 16))
-        out = np.array(fractional_integral_spectral(signal, H=0.0))
-        np.testing.assert_allclose(out, signal, rtol=1e-4, atol=1e-4)
+        with pytest.raises(ValueError):
+            fractional_integral_spectral(signal, H=0.0)
 
     def test_real_output(self):
         """Output should be real-valued for a real input."""
@@ -261,3 +253,208 @@ class TestFractionalIntegralSpectral:
         out = np.array(out)
         assert np.isrealobj(out)
         assert not np.any(np.isnan(out))
+
+    def test_preserves_positivity_of_flux_like_input(self):
+        """A unit-mean positive input (like the FIF flux) stays positive after
+        integration because the DC bin is filled from the nearest non-DC bin,
+        giving the kernel no spectral notch at DC."""
+        rng = np.random.default_rng(1)
+        size = 1024
+        flux = np.exp(0.2 * rng.standard_normal(size))  # strictly positive
+        flux = flux / np.mean(flux)  # unit mean
+        out = np.array(fractional_integral_spectral(flux, H=0.4))
+        assert np.all(out > 0)
+
+    def test_raises_on_overflow_float32(self):
+        """With float32 (default) and default outer_scale, a huge H should trip
+        the overflow guard."""
+        assert get_numerical_precision() == 'float32'
+        rng = np.random.default_rng(4)
+        signal = rng.standard_normal(1024)
+        with pytest.raises(OverflowError):
+            # 1024^50 ≫ float32 max
+            fractional_integral_spectral(signal, H=50.0)
+
+    def test_large_H_works_in_float64(self):
+        """Same H that overflowed float32 should run cleanly in float64."""
+        try:
+            set_numerical_precision('float64')
+            rng = np.random.default_rng(5)
+            signal = rng.standard_normal(1024)
+            out = np.array(fractional_integral_spectral(signal, H=20.0))
+            assert np.all(np.isfinite(out))
+        finally:
+            set_numerical_precision('float32')
+
+    def test_negative_H_no_overflow_check(self):
+        """Negative H never overflows (kernel <= 1) regardless of size."""
+        rng = np.random.default_rng(6)
+        signal = rng.standard_normal(512)
+        out = np.array(fractional_integral_spectral(signal, H=-50.0))
+        assert np.all(np.isfinite(out))
+
+
+class TestBrokenFractionalIntegralSpectral:
+    """Tests for broken_fractional_integral_spectral."""
+
+    def test_raises_when_both_H_zero(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal(512)
+        with pytest.raises(ValueError):
+            broken_fractional_integral_spectral(
+                signal, H_small_scale=0.0, H_large_scale=0.0,
+                transition_wavelength=32,
+            )
+
+    def test_runs_when_one_H_zero(self):
+        rng = np.random.default_rng(1)
+        signal = rng.standard_normal(512)
+        out = np.array(broken_fractional_integral_spectral(
+            signal, H_small_scale=0.3, H_large_scale=0.0,
+            transition_wavelength=32,
+        ))
+        assert np.all(np.isfinite(out))
+
+    def test_equals_single_exponent_when_H_equal_1d(self):
+        rng = np.random.default_rng(2)
+        signal = rng.standard_normal(512)
+        H = 0.4
+        single = np.array(fractional_integral_spectral(signal, H=H))
+        broken = np.array(broken_fractional_integral_spectral(
+            signal, H_small_scale=H, H_large_scale=H,
+            transition_wavelength=32,
+        ))
+        np.testing.assert_allclose(broken, single, rtol=1e-4, atol=1e-4)
+
+    def test_equals_single_exponent_when_H_equal_2d(self):
+        rng = np.random.default_rng(3)
+        signal = rng.standard_normal((64, 64))
+        H = 0.3
+        single = np.array(fractional_integral_spectral(signal, H=H))
+        broken = np.array(broken_fractional_integral_spectral(
+            signal, H_small_scale=H, H_large_scale=H,
+            transition_wavelength=8,
+        ))
+        np.testing.assert_allclose(broken, single, rtol=1e-4, atol=1e-4)
+
+    def test_real_output(self):
+        rng = np.random.default_rng(4)
+        signal = rng.standard_normal(256)
+        out = np.array(broken_fractional_integral_spectral(
+            signal, H_small_scale=0.2, H_large_scale=0.7,
+            transition_wavelength=16,
+        ))
+        assert np.isrealobj(out)
+        assert np.all(np.isfinite(out))
+
+    def test_kernel_continuity_at_transition(self):
+        """Reconstruct the kernel and check the two branches agree at k_t."""
+        size = 4096
+        H_small, H_large = 0.25, 0.7
+        transition_wavelength = 32.0
+        outer_scale = size
+
+        freqs = np.array(_isotropic_rfft_frequencies((size,)))
+        min_freq = 1.0 / float(outer_scale)
+        freqs_reg = np.maximum(freqs, min_freq)
+        k_t = 1.0 / transition_wavelength
+
+        small_prefactor = k_t ** (H_small - H_large)
+        large_branch = freqs_reg ** (-H_large)
+        small_branch = small_prefactor * freqs_reg ** (-H_small)
+        kernel = np.where(freqs_reg <= k_t, large_branch, small_branch)
+
+        # Find bins straddling k_t and confirm the two branch values agree there.
+        # The kernel at the highest bin <= k_t (from large branch) and the
+        # lowest bin > k_t (from small branch) should be within a small factor
+        # of each other given grid discreteness.
+        below_idx = np.searchsorted(freqs_reg, k_t, side='right') - 1
+        above_idx = below_idx + 1
+        # Continuity: evaluate both branches at k_t exactly
+        at_kt_large = k_t ** (-H_large)
+        at_kt_small = small_prefactor * k_t ** (-H_small)
+        np.testing.assert_allclose(at_kt_large, at_kt_small, rtol=1e-12)
+        # Sanity: the actual kernel values at straddling bins should each be
+        # within a factor of 2 of at_kt_large (grid resolution effect).
+        assert 0.5 * at_kt_large < kernel[below_idx] < 2.0 * at_kt_large
+        assert 0.5 * at_kt_large < kernel[above_idx] < 2.0 * at_kt_large
+
+    def test_slopes_in_each_regime(self):
+        """Applied to white noise, the output PSD slopes should approximately
+        match -2*H on each side of k_t. Loose tolerance; smoke-level only."""
+        size = 8192
+        H_small, H_large = 0.3, 0.7
+        transition_wavelength = 64.0
+        rng = np.random.default_rng(7)
+        white = rng.standard_normal(size)
+        out = np.array(broken_fractional_integral_spectral(
+            white, H_small_scale=H_small, H_large_scale=H_large,
+            transition_wavelength=transition_wavelength,
+        )).astype(np.float64)
+        # rfft power spectrum
+        freqs_rfft = np.fft.rfftfreq(size, d=1.0)
+        power = np.abs(np.fft.rfft(out)) ** 2
+        k_t = 1.0 / transition_wavelength
+        # Pick well-separated bin ranges inside each regime.
+        large_mask = (freqs_rfft > 4 / size) & (freqs_rfft < k_t / 2)
+        small_mask = (freqs_rfft > 2 * k_t) & (freqs_rfft < 0.25)
+        slope_large = np.polyfit(
+            np.log(freqs_rfft[large_mask]), np.log(power[large_mask]), 1
+        )[0]
+        slope_small = np.polyfit(
+            np.log(freqs_rfft[small_mask]), np.log(power[small_mask]), 1
+        )[0]
+        # Expect slopes near -2*H; allow ±0.4 tolerance for finite-N variance
+        assert abs(slope_large - (-2 * H_large)) < 0.4, slope_large
+        assert abs(slope_small - (-2 * H_small)) < 0.4, slope_small
+
+    def test_raises_on_overflow_float32(self):
+        assert get_numerical_precision() == 'float32'
+        rng = np.random.default_rng(8)
+        signal = rng.standard_normal(1024)
+        with pytest.raises(OverflowError):
+            broken_fractional_integral_spectral(
+                signal, H_small_scale=0.3, H_large_scale=50.0,
+                transition_wavelength=32,
+            )
+
+    def test_raises_on_prefactor_overflow(self):
+        """When transition_wavelength >> outer_scale with a big H gap, the
+        continuity prefactor k_t^(H_small-H_large) dominates and should
+        trigger the guard even though outer_scale^max(H) is modest."""
+        assert get_numerical_precision() == 'float32'
+        rng = np.random.default_rng(9)
+        signal = rng.standard_normal(1024)
+        with pytest.raises(OverflowError):
+            broken_fractional_integral_spectral(
+                signal,
+                H_small_scale=0.0,   # actually the prefactor depends on the gap
+                H_large_scale=20.0,
+                transition_wavelength=1e9,  # k_t tiny → big prefactor exponent
+                outer_scale=1024,
+            )
+
+    def test_raises_on_nonpositive_transition_wavelength(self):
+        rng = np.random.default_rng(10)
+        signal = rng.standard_normal(256)
+        with pytest.raises(ValueError, match="transition_wavelength"):
+            broken_fractional_integral_spectral(
+                signal, H_small_scale=0.3, H_large_scale=0.5,
+                transition_wavelength=0,
+            )
+        with pytest.raises(ValueError, match="transition_wavelength"):
+            broken_fractional_integral_spectral(
+                signal, H_small_scale=0.3, H_large_scale=0.5,
+                transition_wavelength=-10,
+            )
+
+    def test_raises_on_nonpositive_outer_scale(self):
+        rng = np.random.default_rng(11)
+        signal = rng.standard_normal(256)
+        with pytest.raises(ValueError, match="outer_scale"):
+            broken_fractional_integral_spectral(
+                signal, H_small_scale=0.3, H_large_scale=0.5,
+                transition_wavelength=32, outer_scale=0,
+            )
+        with pytest.raises(ValueError, match="outer_scale"):
+            fractional_integral_spectral(signal, H=0.3, outer_scale=-5)

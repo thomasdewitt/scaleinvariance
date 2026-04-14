@@ -267,7 +267,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         Special case: C1 = 0 routes to fBm (no intermittency), but requires
         causal=False since fBm cannot be causal.
     H : float
-        Hurst exponent in (-1, 1). Controls correlation structure.
+        Hurst exponent. For ``kernel_construction_method_observable='spectral'``
+        (default), any finite real is accepted (modulo an overflow guard for
+        very large positive H at large sizes; see
+        :func:`~scaleinvariance.fractional_integral_spectral`). For the
+        ``'LS2010'``, ``'naive'``, and ``'spectral_odd'`` paths, H must lie in
+        ``[-1, 1]``; values in ``[-1, 0)`` are handled by integrating with
+        ``H + 1`` and then taking a first difference.
     levy_noise : torch.Tensor, optional
         Pre-generated Lévy noise for reproducibility. Must have same size as simulation.
     causal : bool, optional
@@ -344,14 +350,24 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     if C1 == 0 and causal:
         raise ValueError("C1=0 requires causal=False (fBm cannot be causal)")
 
+    if not isinstance(H, (int, float)):
+        raise ValueError("H must be a number.")
+
+    is_spectral_observable = kernel_construction_method_observable == 'spectral'
+
     H_int = 0
-    if H < 0:
-        H_int = -1
-        H += 1
-
-    if not isinstance(H, (int, float)) or H < 0 or H > 1:
-        raise ValueError("H must be a number between -1 and 1.")
-
+    if is_spectral_observable:
+        # Spectral fractional integration handles any real H directly via the
+        # Fourier kernel |f|^(-H); no differencing remap needed.
+        pass
+    else:
+        if H < 0:
+            H_int = -1
+            H += 1
+        if H < 0 or H > 1:
+            raise ValueError(
+                "For non-spectral observable kernels, H must be between -1 and 1."
+            )
 
     if not isinstance(alpha, (int, float)) or alpha <= 0 or alpha > 2:
         raise ValueError("alpha must be a number > 0 and <= 2.")
@@ -505,7 +521,10 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         Must be > 0 for multifractal behavior.
         Special case: C1 = 0 routes to fBm_ND_circulant() (no intermittency).
     H : float
-        Hurst exponent in (0, 1). Controls correlation structure.
+        Hurst exponent. For ``kernel_construction_method_observable='spectral'``
+        (default), any finite real is accepted (modulo an overflow guard for
+        very large positive H at large sizes). For the ``'LS2010'`` path, H
+        must lie in ``[0, 1]`` — negative H is not supported on that path.
     levy_noise : ndarray, optional
         Pre-generated N-D Lévy noise for reproducibility. Must have same shape as simulation.
     outer_scale : int, optional
@@ -594,7 +613,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     - N-D kernels are always non-causal
     - Spectral N-D kernels currently assume the default isotropic Fourier metric and
       do not support custom `scale_metric`
-    - Does not support negative H values (use FIF_1D for H < 0)
+    - The ``'LS2010'`` observable path does not support negative H values;
+      for negative H, use ``kernel_construction_method_observable='spectral'``
+      (the default) which handles any real H.
     - C1 = 0: Routes internally to fBm_ND_circulant() for monofractal case
     """
     # Handle size parameter and infer dimension
@@ -665,8 +686,17 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     if alpha == 1:
         raise ValueError("alpha=1 not supported")   # requires special treatment which is not implemented
 
-    if not isinstance(H, (int, float)) or H < 0 or H > 1:
-        raise ValueError("H must be a number between 0 and 1.")
+    if not isinstance(H, (int, float)):
+        raise ValueError("H must be a number.")
+
+    if kernel_construction_method_observable == 'spectral':
+        # Spectral fractional integration handles any real H directly via the
+        # Fourier kernel |f|^(-H); no range restriction.
+        pass
+    elif H < 0 or H > 1:
+        raise ValueError(
+            "For non-spectral observable kernels, H must be between 0 and 1."
+        )
 
     # Generate or validate Lévy noise
     if levy_noise is None:
