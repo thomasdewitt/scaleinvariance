@@ -13,7 +13,6 @@ and applies to both numpy and torch backends. The default is ``'float32'``.
 
 import numpy as np
 import os
-import warnings
 
 # Try to import torch
 try:
@@ -896,8 +895,10 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False):
     axis : int
         Axis of *signal* along which to convolve.
     nan_safe : bool
-        If True, use direct (non-FFT) convolution that correctly propagates
-        NaNs. Falls back to scipy regardless of backend.
+        If True, produce NaN at output positions whose mode='valid' window
+        contained any NaN in *signal*. Routing depends on the active
+        backend: torch uses an FFT-based mask trick on-device; numpy uses
+        scipy's direct (non-FFT) convolution.
 
     Returns
     -------
@@ -906,6 +907,8 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False):
         along *axis*.
     """
     if nan_safe:
+        if _backend == 'torch':
+            return _convolve1d_fft_nan_safe(signal, kernel, axis)
         return _convolve1d_direct(signal, kernel, axis)
     return _convolve1d_fft(signal, kernel, axis)
 
@@ -949,19 +952,65 @@ def _convolve1d_fft(signal, kernel, axis):
     return conv_full[tuple(slices)]
 
 
+def _convolve1d_fft_nan_safe(signal, kernel, axis):
+    """FFT-based NaN-safe aperiodic convolution, mode='valid'.
+
+    Matches the semantics of :func:`_convolve1d_direct` — any NaN inside a
+    mode='valid' window produces NaN at that output position — while
+    running at FFT cost on the active backend/device (so it stays on GPU
+    under ``backend='torch'``). The trick:
+
+    1. Replace NaNs in *signal* with 0 and run the regular FFT
+       convolution on the cleaned signal.
+    2. Build a 0/1 validity mask and compute the moving count of valid
+       inputs per output window via a prepend-zero ``cumsum`` along
+       *axis* (O(N) — no extra FFT).
+    3. Where the window wasn't fully valid, overwrite the output with
+       NaN. The tolerance threshold (``count > n_ker - 0.5``) stays
+       correct for any kernel length reachable at float32+.
+    """
+    sig_t = asarray(signal)
+    n_sig = sig_t.shape[axis]
+    n_ker = len(kernel)
+    if n_ker > n_sig:
+        raise ValueError(
+            f"Kernel length ({n_ker}) exceeds signal length ({n_sig}) along axis {axis}; "
+            "mode='valid' requires kernel <= signal."
+        )
+    ax = axis % sig_t.ndim
+
+    nan_mask = isnan(sig_t)
+    if _backend == 'torch':
+        zero = torch.zeros((), dtype=sig_t.dtype, device=sig_t.device)
+        clean = torch.where(nan_mask, zero, sig_t)
+        valid = (~nan_mask).to(sig_t.dtype)
+    else:
+        clean = np.where(nan_mask, np.asarray(0, dtype=sig_t.dtype), sig_t)
+        valid = (~nan_mask).astype(sig_t.dtype)
+
+    result = _convolve1d_fft(clean, kernel, axis)
+
+    # valid_count[i] = sum(valid[i:i+n_ker]) via prepend-zero cumsum
+    padded = pad(valid, 1, 0, axis=ax)
+    cum = cumsum(padded, axis=ax)
+    n_out = n_sig - n_ker + 1
+    end_slice = [slice(None)] * sig_t.ndim
+    end_slice[ax] = slice(n_ker, n_ker + n_out)
+    start_slice = [slice(None)] * sig_t.ndim
+    start_slice[ax] = slice(0, n_out)
+    valid_count = cum[tuple(end_slice)] - cum[tuple(start_slice)]
+
+    threshold = n_ker - 0.5
+    if _backend == 'torch':
+        nan_val = torch.tensor(float('nan'), dtype=result.dtype, device=result.device)
+        return torch.where(valid_count > threshold, result, nan_val)
+    return np.where(valid_count > threshold, result,
+                    np.asarray(np.nan, dtype=result.dtype))
+
+
 def _convolve1d_direct(signal, kernel, axis):
     """Direct convolution via scipy (handles NaNs). Always uses numpy."""
     from scipy.signal import convolve
-    if _backend == 'torch' and _device != 'cpu':
-        warnings.warn(
-            f"convolve1d(nan_safe=True) is falling back to scipy direct "
-            f"convolution on CPU even though backend='torch' and device='{_device}'. "
-            "The GPU is not being used. This happens whenever the input contains "
-            "NaNs (e.g. haar_fluctuation/structure_function with "
-            "nan_behavior='ignore'). To stay on GPU, remove NaNs from the input "
-            "before calling.",
-            RuntimeWarning, stacklevel=3,
-        )
     sig_np = to_numpy(signal) if not isinstance(signal, np.ndarray) else signal
     ker_np = to_numpy(kernel) if not isinstance(kernel, np.ndarray) else kernel
 
