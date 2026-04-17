@@ -136,11 +136,18 @@ def set_device(device='cpu'):
 
     Raises
     ------
+    ImportError
+        If a non-CPU device is requested but PyTorch is not installed.
     RuntimeError
         If CUDA is requested but not available.
     """
     global _device, _device_obj
-    if device != 'cpu' and _torch_available:
+    if device != 'cpu':
+        if not _torch_available:
+            raise ImportError(
+                f"Device '{device}' requested but PyTorch is not installed. "
+                "Install with: pip install torch"
+            )
         if 'cuda' in device and not torch.cuda.is_available():
             raise RuntimeError(
                 f"Device '{device}' requested but CUDA is not available."
