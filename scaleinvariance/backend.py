@@ -13,6 +13,7 @@ and applies to both numpy and torch backends. The default is ``'float32'``.
 
 import numpy as np
 import os
+import warnings
 
 # Try to import torch
 try:
@@ -951,6 +952,16 @@ def _convolve1d_fft(signal, kernel, axis):
 def _convolve1d_direct(signal, kernel, axis):
     """Direct convolution via scipy (handles NaNs). Always uses numpy."""
     from scipy.signal import convolve
+    if _backend == 'torch' and _device != 'cpu':
+        warnings.warn(
+            f"convolve1d(nan_safe=True) is falling back to scipy direct "
+            f"convolution on CPU even though backend='torch' and device='{_device}'. "
+            "The GPU is not being used. This happens whenever the input contains "
+            "NaNs (e.g. haar_fluctuation/structure_function with "
+            "nan_behavior='ignore'). To stay on GPU, remove NaNs from the input "
+            "before calling.",
+            RuntimeWarning, stacklevel=3,
+        )
     sig_np = to_numpy(signal) if not isinstance(signal, np.ndarray) else signal
     ker_np = to_numpy(kernel) if not isinstance(kernel, np.ndarray) else kernel
 
