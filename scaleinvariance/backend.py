@@ -906,6 +906,8 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False):
         Convolution result with size ``signal.shape[axis] - len(kernel) + 1``
         along *axis*.
     """
+    if len(kernel) == 0:
+        raise ValueError("kernel cannot be empty")
     if nan_safe:
         if _backend == 'torch':
             return _convolve1d_fft_nan_safe(signal, kernel, axis)
@@ -966,8 +968,10 @@ def _convolve1d_fft_nan_safe(signal, kernel, axis):
        inputs per output window via a prepend-zero ``cumsum`` along
        *axis* (O(N) — no extra FFT).
     3. Where the window wasn't fully valid, overwrite the output with
-       NaN. The tolerance threshold (``count > n_ker - 0.5``) stays
-       correct for any kernel length reachable at float32+.
+       NaN. The validity count is accumulated in int64 and compared
+       exactly, so the mask stays correct for any signal length a float
+       tensor can represent (a float32 cumsum would lose unit resolution
+       past ``2**24`` and silently misclassify windows).
     """
     sig_t = asarray(signal)
     n_sig = sig_t.shape[axis]
@@ -983,10 +987,11 @@ def _convolve1d_fft_nan_safe(signal, kernel, axis):
     if _backend == 'torch':
         zero = torch.zeros((), dtype=sig_t.dtype, device=sig_t.device)
         clean = torch.where(nan_mask, zero, sig_t)
-        valid = (~nan_mask).to(sig_t.dtype)
+        # int64 keeps the window count exact at any reachable signal length
+        valid = (~nan_mask).to(torch.int64)
     else:
         clean = np.where(nan_mask, np.asarray(0, dtype=sig_t.dtype), sig_t)
-        valid = (~nan_mask).astype(sig_t.dtype)
+        valid = (~nan_mask).astype(np.int64)
 
     result = _convolve1d_fft(clean, kernel, axis)
 
@@ -1000,11 +1005,10 @@ def _convolve1d_fft_nan_safe(signal, kernel, axis):
     start_slice[ax] = slice(0, n_out)
     valid_count = cum[tuple(end_slice)] - cum[tuple(start_slice)]
 
-    threshold = n_ker - 0.5
     if _backend == 'torch':
         nan_val = torch.tensor(float('nan'), dtype=result.dtype, device=result.device)
-        return torch.where(valid_count > threshold, result, nan_val)
-    return np.where(valid_count > threshold, result,
+        return torch.where(valid_count == n_ker, result, nan_val)
+    return np.where(valid_count == n_ker, result,
                     np.asarray(np.nan, dtype=result.dtype))
 
 

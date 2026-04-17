@@ -95,3 +95,50 @@ def test_convolve1d_nan_safe_agrees_with_regular_fft_when_no_nans():
     a = B.to_numpy(B.convolve1d(sig, kernel, axis=-1, nan_safe=False))
     b = B.to_numpy(B.convolve1d(sig, kernel, axis=-1, nan_safe=True))
     np.testing.assert_allclose(a, b, rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize("backend,device", _BACKENDS)
+@pytest.mark.parametrize("nan_safe", [False, True])
+def test_convolve1d_empty_kernel_raises(backend, device, nan_safe):
+    """Empty kernel must raise on both backends, both nan_safe settings.
+
+    Pre-regression: scipy's direct path raised. The torch FFT-nan-safe
+    path used to silently return garbage; the dispatcher now guards it.
+    """
+    B.set_backend(backend)
+    if backend == "torch":
+        B.set_device(device)
+    sig = np.arange(5, dtype=np.float32)
+    with pytest.raises(ValueError):
+        B.convolve1d(sig, np.array([], dtype=np.float32), nan_safe=nan_safe)
+
+
+@pytest.mark.parametrize("backend,device", _BACKENDS)
+def test_convolve1d_nan_safe_count_exact_at_large_axis(backend, device):
+    """Validity count must stay bit-exact past the float32 2**24 threshold.
+
+    Reproduces the case where an int-typed cumsum disagrees with the
+    float32 prefix-sum approach: a single NaN near the end of a >2**24
+    axis. With the int64 fix, torch must mark the affected windows NaN
+    exactly as scipy direct would.
+    """
+    pytest.importorskip("torch")
+    import torch as _torch
+
+    B.set_backend(backend)
+    if backend == "torch":
+        B.set_device(device)
+    B.set_numerical_precision("float32")
+
+    n = (1 << 24) + 32
+    n_ker = 4
+    miss = n - 5
+    sig = np.zeros(n, dtype=np.float32)
+    sig[miss] = np.nan
+    kernel = np.ones(n_ker, dtype=np.float32)
+
+    out = B.to_numpy(B.convolve1d(sig, kernel, axis=0, nan_safe=True))
+    assert out.shape == (n - n_ker + 1,)
+    nan_positions = np.where(np.isnan(out))[0]
+    expected = np.arange(max(0, miss - n_ker + 1), miss + 1)
+    np.testing.assert_array_equal(nan_positions, expected)
