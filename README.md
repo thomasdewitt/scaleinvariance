@@ -170,6 +170,6 @@ python tests/visual/test_1D_fif_structure_function.py 0.3 0.1 1.8
 
 ## Requirements
 
-- Python ≥ 3.8
+- Python ≥ 3.10
 - NumPy, SciPy
 - PyTorch (optional, for simulation speedup)
