@@ -105,13 +105,16 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
     else:
         raise ValueError(f"Unknown scaling_method: '{scaling_method}'. Use 'structure_function' or 'haar_fluctuation'")
 
-    lags_1, values_1 = analysis_func(data, order=1, max_sep=max_sep, axis=axis, **analysis_kwargs)
-    H_est, _ = estimate_hurst_from_scaling(lags_1, values_1, min_sep, max_sep)
+    all_orders = np.concatenate([[1.0], q_values.astype(np.float64)])
+    lags, all_values = analysis_func(data, order=all_orders, max_sep=max_sep,
+                                     axis=axis, **analysis_kwargs)
+
+    H_est, _ = estimate_hurst_from_scaling(lags, all_values[0], min_sep, max_sep)
 
     zeta_empirical = np.zeros(len(q_values))
-    for i, q in enumerate(q_values):
-        lags_q, values_q = analysis_func(data, order=q, max_sep=max_sep, axis=axis, **analysis_kwargs)
-        zeta_empirical[i], _ = estimate_hurst_from_scaling(lags_q, values_q, min_sep, max_sep)
+    for i in range(len(q_values)):
+        zeta_empirical[i], _ = estimate_hurst_from_scaling(lags, all_values[i + 1],
+                                                           min_sep, max_sep)
 
     K_values = q_values * H_est - zeta_empirical
 
@@ -184,12 +187,10 @@ def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_fun
     else:
         raise ValueError(f"Unknown scaling_method: {scaling_method}. Use 'structure_function' or 'haar_fluctuation'")
 
-    # Calculate scaling exponents for order 1 and q
-    lags_1, values_1 = analysis_func(data, order=1, max_sep=max_sep, axis=axis)
-    xi_1, sigma_1 = estimate_hurst_from_scaling(lags_1, values_1, min_sep, max_sep, return_fit=False)
-
-    lags_q, values_q = analysis_func(data, order=order, max_sep=max_sep, axis=axis)
-    xi_q, sigma_q = estimate_hurst_from_scaling(lags_q, values_q, min_sep, max_sep, return_fit=False)
+    # Calculate scaling exponents for order 1 and q in one vectorized call
+    lags, values = analysis_func(data, order=[1.0, float(order)], max_sep=max_sep, axis=axis)
+    xi_1, sigma_1 = estimate_hurst_from_scaling(lags, values[0], min_sep, max_sep, return_fit=False)
+    xi_q, sigma_q = estimate_hurst_from_scaling(lags, values[1], min_sep, max_sep, return_fit=False)
 
     # Calculate K(q) from  xi_q = q * xi_1 - K(q)
     Kq = order * xi_1 - xi_q

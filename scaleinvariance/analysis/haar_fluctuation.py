@@ -16,8 +16,11 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
     -----------
     data : array-like
         N-dimensional scalar data array.
-    order : int, optional
-        Order of the fluctuation (default: 1).
+    order : float or 1-D array-like of float, optional
+        Order(s) of the fluctuation (default: 1). Each order must be positive.
+        When an array is given, the absolute Haar convolution |conv(data, kernel)|
+        is computed once per lag and reused across all orders (avoids redundant
+        convolutions).
     max_sep : int, optional
         Maximum separation/lag to compute. If None, defaults to (size along axis) - 1.
     axis : int, optional
@@ -36,7 +39,9 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
     --------
     tuple (np.ndarray, np.ndarray)
         lags : 1-D array of lag values.
-        haar : 1-D array of mean absolute haar fluctuation values corresponding to each lag.
+        haar : mean absolute haar fluctuation values.
+               Shape is (n_lags,) if `order` is a scalar, or (n_orders, n_lags)
+               if `order` is a 1-D array. The lag axis is always last.
     """
     if nan_behavior not in ['ignore','raise']:
         raise ValueError("nan_behavior must be 'raise' or 'ignore'")
@@ -50,6 +55,13 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
 
     if has_nans and nan_behavior == 'raise':
         raise ValueError("Input data contains NaN values; change nan_behavior to 'ignore' or check inputs.")
+
+    order_is_scalar = np.ndim(order) == 0
+    order_arr = np.atleast_1d(np.asarray(order, dtype=np.float64))
+    if order_arr.ndim != 1:
+        raise ValueError("Order must be a scalar or 1-D array.")
+    if np.any(order_arr <= 0):
+        raise ValueError("All orders must be positive.")
 
     # Validate axis
     if axis < 0:
@@ -68,12 +80,12 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
     # Process lag options
     lags = process_lags(lags, max_sep, even_only=True)
 
-    haar_flucs = []
+    haar_flucs = np.empty((order_arr.size, lags.size), dtype=np.float64)
 
     for i, lag in enumerate(lags):
         # If lag is odd or too large, assign NaN and skip processing.
         if lag % 2 != 0 or lag > max_sep:
-            haar_flucs.append(np.nan)
+            haar_flucs[:, i] = np.nan
             continue
 
         # Construct Haar kernel
@@ -84,18 +96,18 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
         abs_conv = B.abs(B.convolve1d(data, kernel, axis=axis, nan_safe=has_nans))
 
         if (B.numel(abs_conv) == 0) or B.all(B.isnan(abs_conv)):
-            haar_flucs.append(np.nan)
+            haar_flucs[:, i] = np.nan
             del abs_conv
             continue
 
-        if order != 1:
-            abs_conv = abs_conv**order
-
-        mean_absolute_haar_fluctuation = float(B.nanmean(abs_conv))
-        haar_flucs.append(mean_absolute_haar_fluctuation)
+        for j, o in enumerate(order_arr):
+            powered = abs_conv if o == 1 else abs_conv ** o
+            haar_flucs[j, i] = float(B.nanmean(powered))
         del abs_conv
 
-    return np.array(lags, dtype=np.int64), np.array(haar_flucs, dtype=np.float64)
+    if order_is_scalar:
+        haar_flucs = haar_flucs[0]
+    return np.array(lags, dtype=np.int64), haar_flucs
 
 
 def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False):

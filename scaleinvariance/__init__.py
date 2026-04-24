@@ -19,7 +19,7 @@ from . import analysis, simulation
 
 # Easy access to main functions
 from .analysis import (
-    structure_function, structure_function_hurst,
+    structure_function, structure_function_hurst, costructure_function,
     haar_fluctuation, haar_fluctuation_hurst,
     power_spectrum_binned, spectral_hurst,
     K_analytic, K_empirical, two_point_C1,

@@ -54,11 +54,14 @@ All three methods estimate the same H parameter but may give slightly different 
 
 **Usually, the *_hurst methods above are preferred to the functions in this section, as the spectrum/scaling function may be obtained from them using a kwarg described below**
 
-| Task                      | Function                | Notes                               |
-| ------------------------- | ----------------------- | ----------------------------------- |
-| Structure function values | `structure_function`    | Returns lags and S_n(r) values      |
-| Haar fluctuation values   | `haar_fluctuation`      | Returns lags and fluctuation values |
-| Power spectral density    | `power_spectrum_binned` | Returns binned frequencies and PSD  |
+| Task                                           | Function                | Notes                                                                                         |
+| ---------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Structure function values                      | `structure_function`    | Returns lags and S_n(r) values. `order` accepts scalar or 1-D array (vectorized over orders). |
+| Haar fluctuation values                        | `haar_fluctuation`      | Returns lags and fluctuation values. `order` accepts scalar or 1-D array.                     |
+| Mixed (two-field, two-exponent) structure fn   | `costructure_function`  | S_{p,q}(r) = <\|delta f1\|^p * \|delta f2\|^q>. Both orders accept scalar or 1-D array.      |
+| Power spectral density                         | `power_spectrum_binned` | Returns binned frequencies and PSD                                                            |
+
+**Array-order vectorization** — passing an array of orders to `structure_function`, `haar_fluctuation`, or either `order1/order2` of `costructure_function` computes the expensive per-lag work (|delta| or the Haar convolution) once and reuses it across all orders. This is substantially faster than a Python loop when scanning a range of moments.
 
 ### Intermittency Analysis
 
@@ -139,22 +142,46 @@ scaleinvariance.spectral_hurst(
 ```python
 scaleinvariance.structure_function(
     data,                    # N-dimensional array
-    order=1,                 # Order n of structure function S_n(r)
+    order=1,                 # Scalar or 1-D array of positive orders.
+                             # Array input computes |delta| once per lag and
+                             # returns shape (n_orders, n_lags).
     max_sep=None,            # Maximum lag to compute
     axis=0,                  # Axis along which to compute
     lags='powers of 1.2'     # 'all', 'powers of X', or array of lags
 ) -> (lags, sf_values)
+# sf_values.shape: (n_lags,) for scalar order, (n_orders, n_lags) for array order
 ```
 
 ```python
 scaleinvariance.haar_fluctuation(
     data,                    # N-dimensional array
-    order=1,                 # Order of fluctuation
+    order=1,                 # Scalar or 1-D array of positive orders.
+                             # Array input reuses the Haar convolution across orders.
     max_sep=None,            # Maximum lag to compute
     axis=0,                  # Axis along which to compute
     lags='powers of 1.2',    # 'all', 'powers of X', or array of lags
     nan_behavior='raise'     # 'raise' or 'ignore'
 ) -> (lags, haar_values)
+# haar_values.shape: (n_lags,) for scalar order, (n_orders, n_lags) for array order
+```
+
+```python
+scaleinvariance.costructure_function(
+    data1, data2,            # N-dimensional arrays. Must have identical shape.
+    order1=1,                # Scalar or 1-D array of positive orders for |delta f1|.
+    order2=1,                # Scalar or 1-D array of positive orders for |delta f2|.
+    max_sep=None,            # Maximum lag to compute
+    axis=0,                  # Axis along which to compute
+    lags='powers of 1.2'     # 'all', 'powers of X', or array of lags
+) -> (lags, cosf_values)
+# cosf_values.shape:
+#   (n_lags,)                        both scalar
+#   (n_order1, n_lags)               order1 array, order2 scalar
+#   (n_order2, n_lags)               order1 scalar, order2 array
+#   (n_order1, n_order2, n_lags)     both arrays
+# Averages over positions where BOTH increments are finite (asymmetric with
+# single-field structure_function, which only needs one field finite).
+# Self-consistency: costructure_function(f, f, p, q) == structure_function(f, p+q).
 ```
 
 ```python
@@ -499,6 +526,23 @@ data = np.stack([
 # Analyze ALL at once, along axis 1
 H_est, H_err = scaleinvariance.structure_function_hurst(data, axis=1)
 print(f"Estimated H = {H_est:.3f} +/- {H_err:.3f} (true: {H_true})")
+```
+
+### Mixed (costructure) function for two fields
+
+```python
+import numpy as np
+import scaleinvariance
+
+# Two co-located fields (same shape, same grid)
+np.random.seed(0); f1 = scaleinvariance.FIF_1D(4096, 1.8, 0.1, H=0.3)
+np.random.seed(1); f2 = scaleinvariance.FIF_1D(4096, 1.8, 0.1, H=0.3)
+
+# Full (p, q) grid in one call — |delta f1| and |delta f2| computed once per lag
+p = np.arange(0.5, 2.51, 0.5)
+q = np.arange(0.5, 2.51, 0.5)
+lags, cosf = scaleinvariance.costructure_function(f1, f2, order1=p, order2=q)
+# cosf.shape == (len(p), len(q), len(lags))
 ```
 
 ### 2D FIF with GSI anisotropy
