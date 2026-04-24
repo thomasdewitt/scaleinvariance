@@ -111,7 +111,7 @@ class TestNaNHandling:
         rng = np.random.default_rng(0)
         f1 = rng.standard_normal(512)
         f2 = rng.standard_normal(512)
-        # Inject NaNs into f1 only; f2 stays finite.
+        # Inject NaNs into f1 only; f2 stays NaN-free.
         nan_idx = np.array([50, 100, 200, 300])
         f1[nan_idx] = np.nan
 
@@ -125,8 +125,7 @@ class TestNaNHandling:
         lag = 1
         d1 = np.abs(f1[lag:] - f1[:-lag])
         d2 = np.abs(f2[lag:] - f2[:-lag])
-        expected = np.nanmean(d1 * d2)  # averages over positions where both finite
-        # Find index of lag=1 in returned lags
+        expected = np.nanmean(d1 * d2)  # averages over positions where neither increment is NaN
         idx = int(np.where(lags == 1)[0][0])
         np.testing.assert_allclose(cosf[idx], expected, rtol=1e-10)
 

@@ -93,7 +93,9 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
 
     Defined as:
         S_{p,q}(r) = <|u_1(x + r) - u_1(x)|^p * |u_2(x + r) - u_2(x)|^q>
-    where <> denotes the average over positions where both increments are finite.
+    where <> denotes the average over positions where neither increment is NaN.
+    (Matches the NaN-only masking convention of `structure_function` and
+    `haar_fluctuation`; `inf` values are not specially handled.)
 
     The diagonal p = q case recovers a single-exponent co-structure function;
     the p -> 0 or q -> 0 slices recover the single-field structure functions
@@ -129,10 +131,15 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
 
     Notes
     -----
-    The average is over positions where both increments are finite. This is
+    The average is over positions where neither increment is NaN. This is
     asymmetric with `structure_function`, which averages over positions where
-    the single field is finite. If one field has NaNs and the other does not,
-    the effective sample count here is the intersection of valid positions.
+    the single field's increment is non-NaN. If one field has NaNs and the
+    other does not, the effective sample count here is the intersection of
+    valid positions.
+
+    `inf` values are not specially handled and will propagate through to the
+    result (consistent with the NaN-only masking of the single-field
+    `structure_function`).
     """
     data1 = B.asarray(data1)
     data2 = B.asarray(data2)
