@@ -8,7 +8,9 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'scaleinvariance'
 copyright = '2024, Thomas DeWitt'
 author = 'Thomas DeWitt'
-release = '0.7.0'
+
+# Read version from the installed package so it stays in sync with releases.
+from scaleinvariance import __version__ as release  # noqa: E402
 
 # -- General configuration ---------------------------------------------------
 extensions = [

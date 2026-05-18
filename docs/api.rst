@@ -43,6 +43,13 @@ Hurst Estimation
 
 .. autofunction:: scaleinvariance.spectral_hurst
 
+Structure Functions
+~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: scaleinvariance.structure_function
+
+.. autofunction:: scaleinvariance.costructure_function
+
 Analysis Functions
 ~~~~~~~~~~~~~~~~~~
 

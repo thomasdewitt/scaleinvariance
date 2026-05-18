@@ -20,10 +20,15 @@ View example FIF simulation output in the [Multifractal Explorer](https://thomas
 
 All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Data and fit line for plotting may be returned with `return_fit=True`.
 
+#### Structure functions
+
+- **Structure function**: `structure_function()` - Order-`q` structure function (`q` may be scalar or array-valued)
+- **Co-structure function**: `costructure_function()` - Mixed-moment structure function for two fields
+
 ### Simulation
 
 - **1D fractionally integrated flux (FIF)**: `FIF_1D()` - Multifractal cascade simulation; causal/acausal
-- **N-D fractionally integrated flux (FIF)**: `FIF_ND()` - Isotropic N-D multifractals for arbitrary dimensions (Example shown above)
+- **N-D fractionally integrated flux (FIF)**: `FIF_ND()` - Isotropic N-D multifractals for arbitrary dimensions, with optional per-axis causality (Example shown above)
 - **1D fractional Brownian motion**: `fBm_1D_circulant()` - Fast spectral synthesis
 - **N-D fractional Brownian motion**: `fBm_ND_circulant()` - Isotropic N-D (2D, 3D, 4D, etc.) fBm fields
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
