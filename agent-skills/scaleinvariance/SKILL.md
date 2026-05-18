@@ -238,16 +238,22 @@ scaleinvariance.FIF_1D(
     C1,                        # Codimension of mean (intermittency), must be >= 0
                                # C1 = 0 routes to fBm (requires causal=False)
     H,                         # Hurst exponent. 'spectral' path: any real (with
-                               # overflow guard). 'LS2010'/'naive'/'spectral_odd'
-                               # paths: H in [-1, 1] (H<0 via diff).
+                               # overflow guard). 'LS2010'/'naive' paths:
+                               # H in [-1, 1] (H<0 via diff).
     levy_noise=None,           # Pre-generated noise for reproducibility
     causal=False,              # Use causal kernels (must be False for C1=0)
     outer_scale=None,          # Large-scale cutoff (default: size)
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method_flux='LS2010',        # 'LS2010' or 'naive'
-    kernel_construction_method_observable='spectral', # 'spectral', 'LS2010', 'naive', or 'spectral_odd'
-    periodic=True              # Full periodic output; set False to double internally and crop
-) -> numpy.ndarray   # Normalized by mean (or zero mean for H < 0 on non-spectral paths)
+    kernel_construction_method_observable='spectral', # 'spectral', 'LS2010', 'naive'.
+                                                      # 'spectral_odd' is DEPRECATED →
+                                                      # use 'spectral' + observable_kernel_odd_axes=True
+    periodic=True,             # Full periodic output; set False to double internally and crop
+    observable_kernel_odd_axes=None,  # bool — antisymmetric observable kernel.
+                                      # Requires 'spectral' observable. Output is
+                                      # zero-mean / unit-std rather than unit-mean.
+                                      # Cannot be combined with causal=True.
+) -> numpy.ndarray   # Normalized by mean (or zero mean for odd / H < 0 paths)
 ```
 
 ```python
@@ -265,8 +271,20 @@ scaleinvariance.FIF_ND(
     kernel_construction_method_observable='spectral', # 'spectral' or 'LS2010'
     periodic=False,            # Bool or tuple of bool for per-axis periodicity
     scale_metric=None,         # Custom GSI distance metric
-    scale_metric_dim=None      # Scaling dimension (default: spatial dimension)
-) -> numpy.ndarray   # Normalized by mean
+    scale_metric_dim=None,     # Scaling dimension (default: spatial dimension)
+    causal=False,              # Bool or tuple-of-bool — per-axis causal kernels.
+                               # Requires LS2010 observable (spectral does not
+                               # support causal). Variance compensated by 2^k
+                               # for k causal axes. Applied to both flux and
+                               # observable kernels.
+    observable_kernel_odd_axes=None,  # Bool or tuple-of-bool — per-axis
+                                      # antisymmetric observable kernel via the
+                                      # Fourier phase factor i^k · Π sign(f_j).
+                                      # Requires 'spectral' observable (not
+                                      # compatible with LS2010 or scale_metric).
+                                      # Same axis cannot be both causal and odd.
+                                      # Output is zero-mean / unit-std.
+) -> numpy.ndarray   # Normalized by mean (or zero mean / unit std for odd)
 ```
 
 ### Reproducibility
@@ -360,12 +378,26 @@ The broken variant uses a piecewise power-law kernel: slope `-H_large_scale` for
 
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
 - Flux kernels only support `'LS2010'` (and deprecated `'naive'` for 1D).
-- Observable kernels support `'LS2010'`, `'spectral'`, and `'spectral_odd'`.
-- `'spectral'` observable (default): exact Fourier-space power-law transfer function. Raises if `causal=True` (1D) or `scale_metric` is set (N-D).
-- `'spectral_odd'` observable (1D only): odd (antisymmetric) Fourier-space transfer function. Produces zero-mean output. Raises if `causal=True`.
+- Observable kernels support `'LS2010'`, `'spectral'`, and the deprecated `'naive'` (1D only).
+- `'spectral'` observable (default): exact Fourier-space power-law transfer function. Raises if `causal=True` (does not support causal); does not support custom `scale_metric` in N-D.
+- `'spectral_odd'` is **deprecated** — equivalent to `'spectral'` with `observable_kernel_odd_axes=True`. Emits a `DeprecationWarning`; will be removed in a future release.
 - `naive` FIF kernels remain available only for 1D comparison/debugging and emit a warning because their outputs are not remotely accurate.
 - `fBm_1D` still uses a single `kernel_construction_method=` argument and now defaults to `'LS2010'`.
 - `fBm_1D(..., kernel_construction_method='spectral')` is supported for non-causal periodic runs.
+
+### Causal and odd (antisymmetric) kernels
+
+These are two **orthogonal** modifiers controlled by the `causal` and `observable_kernel_odd_axes` parameters. Each accepts a bool (all axes) or a tuple of bool (per-axis). The compatibility matrix:
+
+| Modifier                       | Required observable method  | Notes                                                |
+| ------------------------------ | ---------------------------- | ---------------------------------------------------- |
+| `causal=True/tuple`            | `'LS2010'`                   | Zeros the negative-coordinate half of the kernel. Applied to **both** flux and observable kernels. Variance compensated by `2^k` for `k` causal axes (so log-flux is scaled by `(2^k · C1)^(1/α)`). |
+| `observable_kernel_odd_axes`   | `'spectral'`                 | Fourier-space phase factor `i^k · Π sign(f_j)`. Preserves the magnitude spectrum bin-by-bin (the operator is unitary on each non-DC/non-Nyquist bin). Output is normalized to zero mean / unit std rather than unit mean. |
+
+Combined:
+- The same axis cannot be both causal and odd.
+- `causal` + `odd` requires `LS2010` (causal) and `spectral` (odd) for the observable — incompatible. So a non-trivial combo means causal on some axes (LS2010-only) **or** odd on some axes (spectral-only), not both at once on the same call.
+- GSI / custom `scale_metric` requires LS2010 observable → cannot be combined with `observable_kernel_odd_axes`.
 - In `FIF_ND`, spectral kernels do not support custom `scale_metric`.
 
 ### GSI Scale Metric

@@ -145,8 +145,7 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     return corrected_kernel
 
 def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None,
-                         outer_scale_width_factor=2.0, final_power=None, scale_metric=None,
-                         odd_axes=None):
+                         outer_scale_width_factor=2.0, final_power=None, scale_metric=None):
     """
     Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
 
@@ -185,14 +184,6 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         If None (default), standard Euclidean distance is computed with dx=2 spacing.
         **Shape requirement**: Must match the kernel size (same shape as size parameter).
         **Note**: Only applicable for N-D case; ignored for 1D.
-    odd_axes : bool or tuple of bool, optional
-        Multiply the kernel by ``sign(x_j)`` along each axis ``j`` marked True.
-        ``None`` (default) or all-False yields the standard even kernel. With
-        any axis set True, the kernel is antisymmetric in that axis and
-        therefore zero-mean. With ``k`` axes set True, the per-quadrant sign
-        pattern is ``Π_{j in odd_axes} sign(x_j)``. The same axis must not be
-        marked both ``causal`` and ``odd`` — causality zeros one half-plane
-        which leaves no negative-coordinate side to sign-flip.
 
     Returns
     -------
@@ -208,21 +199,10 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         shape = tuple(size)
 
     causal_tuple = _normalize_axis_flag(causal, ndim, 'causal')
-    odd_tuple = _normalize_axis_flag(odd_axes, ndim, 'odd_axes')
 
-    # An axis cannot be simultaneously causal AND odd: causal zeros one
-    # half-plane, leaving the other half to be sign-flipped by *itself*,
-    # which is a no-op times the survivor. Mathematically ill-posed → raise.
-    for ax in range(ndim):
-        if causal_tuple[ax] and odd_tuple[ax]:
-            raise ValueError(
-                f"Axis {ax} cannot be both causal and odd; the causal "
-                "mask zeros the negative-coordinate half, leaving no "
-                "antisymmetric structure for the odd sign-flip to act on."
-            )
-
-    # Coordinate arrays per axis (always built, since odd/causal masks need
-    # them even when the user supplies a custom scale_metric).
+    # Coordinate arrays per axis. Built unconditionally even when the user
+    # supplies a custom scale_metric, because per-axis causal masks need
+    # signed coordinates regardless of the metric used for the radial part.
     coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in shape]
 
     # Build distance / scale metric.
@@ -262,16 +242,6 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         broadcast_shape = [1] * ndim
         broadcast_shape[axis_idx] = coord.shape[0]
         kernel = kernel * mask_1d.reshape(broadcast_shape)
-
-    # Per-axis odd sign-flip: multiply by sign(coord_j).
-    for axis_idx, is_odd in enumerate(odd_tuple):
-        if not is_odd:
-            continue
-        coord = coord_arrays[axis_idx]
-        sign_1d = B.sign(coord)
-        broadcast_shape = [1] * ndim
-        broadcast_shape[axis_idx] = coord.shape[0]
-        kernel = kernel * sign_1d.reshape(broadcast_shape)
 
     return kernel
 

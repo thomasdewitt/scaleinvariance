@@ -200,6 +200,380 @@ class TestKernelSpectralOdd:
         assert not np.any(np.isinf(result))
 
 
+class TestKernelLS2010PerAxisCausal:
+    """Tests for the per-axis causal extension on create_kernel_LS2010."""
+
+    def test_per_axis_causal_zeroes_correct_half(self):
+        """causal=(True, False) zeros the axis-0 negative half only."""
+        k = np.array(create_kernel_LS2010((64, 64), -1.7, -0.3, causal=(True, False)))
+        assert np.all(k[:32, :] == 0)
+        assert np.any(k[32:, :] != 0)
+
+    def test_all_axes_causal_keeps_one_orthant(self):
+        k = np.array(create_kernel_LS2010((32, 32), -1.7, -0.3, causal=True))
+        assert np.all(k[:16, :] == 0)
+        assert np.all(k[:, :16] == 0)
+        assert np.any(k[16:, 16:] != 0)
+
+    def test_causal_axis1_only(self):
+        """causal=(False, True) zeros the axis-1 negative half only."""
+        k = np.array(create_kernel_LS2010((64, 64), -1.7, -0.3, causal=(False, True)))
+        assert np.all(k[:, :32] == 0)
+        assert np.any(k[:, 32:] != 0)
+
+    def test_raises_on_tuple_length_mismatch(self):
+        with pytest.raises(ValueError, match="length"):
+            create_kernel_LS2010((64, 64), -1.7, -0.3, causal=(True, True, True))
+
+
+class TestFractionalIntegralSpectralOddAxes:
+    """Tests for odd_axes on fractional_integral_spectral."""
+
+    def test_1d_real_output_zero_mean(self):
+        rng = np.random.default_rng(0)
+        signal = rng.standard_normal(1024)
+        out = np.array(fractional_integral_spectral(signal, H=0.4, odd_axes=True))
+        assert np.isrealobj(out)
+        assert abs(out.mean()) < 1e-5
+        assert np.all(np.isfinite(out))
+
+    def test_2d_both_odd_real_output(self):
+        """k=2 makes the kernel purely real (i^2 = -1); output is real and zero-mean."""
+        rng = np.random.default_rng(1)
+        signal = rng.standard_normal((64, 64))
+        out = np.array(fractional_integral_spectral(signal, H=0.3, odd_axes=True))
+        assert np.isrealobj(out)
+        assert abs(out.mean()) < 1e-5
+
+    def test_3d_all_odd_real_output(self):
+        """k=3 → purely imaginary kernel + Hermitian → still real-valued output."""
+        rng = np.random.default_rng(2)
+        signal = rng.standard_normal((16, 16, 16))
+        out = np.array(fractional_integral_spectral(signal, H=0.2, odd_axes=True))
+        assert np.isrealobj(out)
+        assert abs(out.mean()) < 1e-5
+
+    def test_matches_legacy_create_kernel_spectral_odd_1d(self):
+        """The new spectral path with odd_axes=True must match the legacy
+        create_kernel_spectral_odd convolution in 1D up to floating-point
+        precision."""
+        from scaleinvariance.simulation.FIF import periodic_convolve
+        H = 0.4
+        size = 1024
+        rng = np.random.default_rng(3)
+        signal = rng.standard_normal(size)
+        legacy_kernel = create_kernel_spectral_odd(
+            size, -1.0 + H, causal=False, outer_scale=size
+        )
+        legacy_out = np.array(periodic_convolve(signal, legacy_kernel, kernel_is_fourier=True))
+        new_out = np.array(fractional_integral_spectral(signal, H=H, odd_axes=True))
+        # Both produce mathematically identical outputs (same Fourier response,
+        # same DC/Nyquist handling).
+        np.testing.assert_allclose(legacy_out, new_out, rtol=1e-4, atol=1e-4)
+
+    def test_odd_path_preserves_magnitude_spectrum(self):
+        """|FFT(K_odd · X)|^2 / |FFT(X)|^2 should match |f|^(-2H) (radial PSD)
+        away from DC/Nyquist — odd kernels only change phases, not magnitudes."""
+        H = 0.3
+        size = 1024
+        rng = np.random.default_rng(4)
+        signal = rng.standard_normal(size)
+        even_out = np.array(fractional_integral_spectral(signal, H=H))
+        odd_out = np.array(fractional_integral_spectral(signal, H=H, odd_axes=True))
+        # Compare ratio of power spectra at intermediate frequencies.
+        from numpy.fft import rfft
+        psd_even = np.abs(rfft(even_out)) ** 2
+        psd_odd = np.abs(rfft(odd_out)) ** 2
+        # Use mid-range bins (avoid DC and Nyquist, where the odd kernel
+        # explicitly zeros).
+        mid = slice(10, size // 4)
+        np.testing.assert_allclose(psd_odd[mid], psd_even[mid], rtol=1e-3)
+
+
+class TestFIF_ND_OddAndCausal:
+    """End-to-end tests for the new N-D parameters."""
+
+    def test_2d_odd_output_is_zero_mean(self):
+        from scaleinvariance import FIF_ND
+        out = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                     observable_kernel_odd_axes=True)
+        assert abs(out.mean()) < 1e-5
+        assert abs(out.std() - 1.0) < 1e-5
+
+    def test_2d_odd_with_ls2010_raises(self):
+        """odd_axes is restricted to the spectral observable path."""
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="spectral"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   kernel_construction_method_observable='LS2010',
+                   observable_kernel_odd_axes=True)
+
+    def test_2d_causal_runs_and_is_finite(self):
+        from scaleinvariance import FIF_ND
+        out = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                     kernel_construction_method_observable='LS2010',
+                     causal=True)
+        assert np.all(np.isfinite(out))
+
+    def test_2d_per_axis_causal(self):
+        from scaleinvariance import FIF_ND
+        out = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                     kernel_construction_method_observable='LS2010',
+                     causal=(True, False))
+        assert np.all(np.isfinite(out))
+
+    def test_2d_causal_axis0_odd_axis1_requires_spectral_raises(self):
+        """Mixed causal + odd on different axes still hits the LS2010-only
+        path for causal, which is incompatible with odd_axes."""
+        from scaleinvariance import FIF_ND
+        # LS2010 + odd raises; the user-facing message is the LS2010+odd one
+        # because LS2010 is required for causal.
+        with pytest.raises(ValueError, match="spectral"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   kernel_construction_method_observable='LS2010',
+                   causal=(True, False),
+                   observable_kernel_odd_axes=(False, True))
+        # The same combo with spectral observable raises because causal
+        # requires LS2010.
+        with pytest.raises(ValueError, match="Spectral observable"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   kernel_construction_method_observable='spectral',
+                   causal=(True, False),
+                   observable_kernel_odd_axes=(False, True))
+
+    def test_2d_causal_with_spectral_observable_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="Spectral observable"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   causal=True)  # default observable is 'spectral'
+
+    def test_2d_same_axis_causal_and_odd_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="cannot be both causal and odd"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   kernel_construction_method_observable='LS2010',
+                   causal=True, observable_kernel_odd_axes=True)
+
+    def test_C1_zero_with_causal_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="fBm cannot be causal"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, periodic=True, causal=True)
+
+    def test_C1_zero_with_odd_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="C1=0"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, periodic=True,
+                   observable_kernel_odd_axes=True)
+
+    def test_H_zero_with_odd_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="H=0"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.0, periodic=True,
+                   observable_kernel_odd_axes=True)
+
+
+class TestOddKernelPSDEquivalence:
+    """The odd-axes Fourier multiplier ``i^k · Π sign(f_j)`` has unit
+    modulus, so the magnitude spectrum of the output is unchanged.
+
+    Two test layers:
+      1. At the ``fractional_integral_spectral`` level: applying the
+         operator with vs without ``odd_axes`` to the **same** input must
+         produce outputs whose PSDs match bin-by-bin (within float noise),
+         except at DC / Nyquist along odd axes (which are zeroed in the odd
+         case).
+      2. At the ``FIF_1D``/``FIF_ND`` level: the per-output normalization
+         differs (unit-mean vs zero-mean/unit-std), so PSDs match only up to
+         a single global scalar. The test verifies the *ratio* is
+         approximately constant across inertial-range bins.
+    """
+
+    # ----- 1. Operator level: bin-by-bin match -----
+
+    @staticmethod
+    def _inertial_mask_1d_full(n):
+        """1D inertial-range mask on the full FFT grid (signed frequencies)."""
+        freqs = np.fft.fftfreq(n, d=1.0)
+        return (np.abs(freqs) > 4.0 / n) & (np.abs(freqs) < 1.0 / 8.0)
+
+    def test_operator_1d_psd_match_bin_by_bin(self):
+        """fractional_integral_spectral with vs without odd_axes — same input
+        → identical bin-by-bin PSDs (inertial range)."""
+        from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
+        size = 2048
+        H = 0.3
+        rng = np.random.default_rng(11)
+        flux = np.exp(0.5 * rng.standard_normal(size))
+        flux /= flux.mean()
+        even = np.asarray(fractional_integral_spectral(flux, H=H))
+        odd = np.asarray(fractional_integral_spectral(flux, H=H, odd_axes=True))
+        psd_even = np.abs(np.fft.fft(even)) ** 2
+        psd_odd = np.abs(np.fft.fft(odd)) ** 2
+        mask = self._inertial_mask_1d_full(size)
+        np.testing.assert_allclose(psd_odd[mask], psd_even[mask], rtol=1e-4)
+
+    def test_operator_2d_psd_match_bin_by_bin_both_odd(self):
+        """2D, both axes odd."""
+        from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
+        size = (256, 256)
+        H = 0.3
+        rng = np.random.default_rng(12)
+        flux = np.exp(0.4 * rng.standard_normal(size))
+        flux /= flux.mean()
+        even = np.asarray(fractional_integral_spectral(flux, H=H))
+        odd = np.asarray(fractional_integral_spectral(flux, H=H, odd_axes=True))
+        psd_even = np.abs(np.fft.fftn(even)) ** 2
+        psd_odd = np.abs(np.fft.fftn(odd)) ** 2
+        fx, fy = np.meshgrid(np.fft.fftfreq(size[0]), np.fft.fftfreq(size[1]),
+                             indexing='ij')
+        fmag = np.sqrt(fx**2 + fy**2)
+        # Exclude DC line on each odd axis (and the Nyquist for even-N axes).
+        mask = (fmag > 4.0 / max(size)) & (fmag < 1.0 / 8.0)
+        mask &= (fx != 0) & (fy != 0)
+        if size[0] % 2 == 0:
+            mask &= (np.abs(fx - 0.5) > 1e-12) & (np.abs(fx + 0.5) > 1e-12)
+        if size[1] % 2 == 0:
+            mask &= (np.abs(fy - 0.5) > 1e-12) & (np.abs(fy + 0.5) > 1e-12)
+        np.testing.assert_allclose(psd_odd[mask], psd_even[mask], rtol=1e-4)
+
+    def test_operator_2d_psd_match_bin_by_bin_single_axis(self):
+        """2D, only axis 0 odd."""
+        from scaleinvariance.simulation.fractional_integration import fractional_integral_spectral
+        size = (256, 256)
+        H = 0.4
+        rng = np.random.default_rng(13)
+        flux = np.exp(0.4 * rng.standard_normal(size))
+        flux /= flux.mean()
+        even = np.asarray(fractional_integral_spectral(flux, H=H))
+        odd = np.asarray(fractional_integral_spectral(flux, H=H, odd_axes=(True, False)))
+        psd_even = np.abs(np.fft.fftn(even)) ** 2
+        psd_odd = np.abs(np.fft.fftn(odd)) ** 2
+        fx, fy = np.meshgrid(np.fft.fftfreq(size[0]), np.fft.fftfreq(size[1]),
+                             indexing='ij')
+        fmag = np.sqrt(fx**2 + fy**2)
+        mask = (fmag > 4.0 / max(size)) & (fmag < 1.0 / 8.0)
+        # Only axis 0 is odd → exclude DC and Nyquist along that axis only.
+        mask &= (fx != 0)
+        if size[0] % 2 == 0:
+            mask &= (np.abs(fx - 0.5) > 1e-12) & (np.abs(fx + 0.5) > 1e-12)
+        np.testing.assert_allclose(psd_odd[mask], psd_even[mask], rtol=1e-4)
+
+    # ----- 2. FIF level: PSDs match up to a constant scalar -----
+
+    @staticmethod
+    def _constant_ratio_test(psd_even, psd_odd, mask, cv_tol=0.02):
+        """Assert that psd_odd[mask] / psd_even[mask] is approximately
+        constant across bins (low coefficient of variation)."""
+        ratio = psd_odd[mask] / psd_even[mask]
+        ratio_cv = ratio.std() / ratio.mean()
+        assert ratio_cv < cv_tol, (
+            f"Ratio is not approximately constant: mean={ratio.mean():.4f}, "
+            f"std={ratio.std():.4f}, cv={ratio_cv:.4f} (tol={cv_tol})"
+        )
+
+    def test_fif_1d_psd_ratio_is_constant(self):
+        """FIF_1D output PSDs (even vs odd, same noise) differ only by an
+        overall scale (mean-normalization vs std-normalization). Bin-wise
+        ratio across the inertial range should be near-constant."""
+        from scaleinvariance import FIF_1D
+        from scaleinvariance.simulation.FIF import extremal_levy
+        size = 2048
+        alpha, C1, H = 1.8, 0.1, 0.3
+        noise = extremal_levy(alpha=alpha, size=size, seed=11)
+        even = np.asarray(FIF_1D(size, alpha, C1, H, levy_noise=noise))
+        odd = np.asarray(FIF_1D(size, alpha, C1, H, levy_noise=noise,
+                                 observable_kernel_odd_axes=True))
+        psd_even = np.abs(np.fft.fft(even)) ** 2
+        psd_odd = np.abs(np.fft.fft(odd)) ** 2
+        mask = self._inertial_mask_1d_full(size)
+        self._constant_ratio_test(psd_even, psd_odd, mask, cv_tol=0.02)
+
+    def test_fif_nd_psd_ratio_is_constant_both_odd(self):
+        from scaleinvariance import FIF_ND
+        from scaleinvariance.simulation.FIF import _extremal_levy_core
+        from scaleinvariance import backend as B
+        size = (256, 256)
+        alpha, C1, H = 1.8, 0.1, 0.3
+        np.random.seed(7)
+        noise_np = B.to_numpy(_extremal_levy_core(alpha, size=size[0] * size[1])).reshape(size)
+        even = np.asarray(FIF_ND(size, alpha, C1, H, periodic=True, levy_noise=noise_np))
+        odd = np.asarray(FIF_ND(size, alpha, C1, H, periodic=True, levy_noise=noise_np,
+                                observable_kernel_odd_axes=True))
+        psd_even = np.abs(np.fft.fftn(even)) ** 2
+        psd_odd = np.abs(np.fft.fftn(odd)) ** 2
+        fx, fy = np.meshgrid(np.fft.fftfreq(size[0]), np.fft.fftfreq(size[1]),
+                             indexing='ij')
+        fmag = np.sqrt(fx**2 + fy**2)
+        mask = (fmag > 4.0 / max(size)) & (fmag < 1.0 / 8.0)
+        mask &= (fx != 0) & (fy != 0)
+        if size[0] % 2 == 0:
+            mask &= (np.abs(fx - 0.5) > 1e-12) & (np.abs(fx + 0.5) > 1e-12)
+        if size[1] % 2 == 0:
+            mask &= (np.abs(fy - 0.5) > 1e-12) & (np.abs(fy + 0.5) > 1e-12)
+        self._constant_ratio_test(psd_even, psd_odd, mask, cv_tol=0.02)
+
+    def test_fif_nd_psd_ratio_is_constant_single_axis(self):
+        from scaleinvariance import FIF_ND
+        from scaleinvariance.simulation.FIF import _extremal_levy_core
+        from scaleinvariance import backend as B
+        size = (256, 256)
+        alpha, C1, H = 1.8, 0.1, 0.4
+        np.random.seed(13)
+        noise_np = B.to_numpy(_extremal_levy_core(alpha, size=size[0] * size[1])).reshape(size)
+        even = np.asarray(FIF_ND(size, alpha, C1, H, periodic=True, levy_noise=noise_np))
+        odd = np.asarray(FIF_ND(size, alpha, C1, H, periodic=True, levy_noise=noise_np,
+                                observable_kernel_odd_axes=(True, False)))
+        psd_even = np.abs(np.fft.fftn(even)) ** 2
+        psd_odd = np.abs(np.fft.fftn(odd)) ** 2
+        fx, fy = np.meshgrid(np.fft.fftfreq(size[0]), np.fft.fftfreq(size[1]),
+                             indexing='ij')
+        fmag = np.sqrt(fx**2 + fy**2)
+        mask = (fmag > 4.0 / max(size)) & (fmag < 1.0 / 8.0)
+        mask &= (fx != 0)
+        if size[0] % 2 == 0:
+            mask &= (np.abs(fx - 0.5) > 1e-12) & (np.abs(fx + 0.5) > 1e-12)
+        self._constant_ratio_test(psd_even, psd_odd, mask, cv_tol=0.02)
+
+
+class TestFIF_1D_OddAndCausalValidation:
+    """Validation tests for new FIF_1D parameters."""
+
+    def test_spectral_odd_method_emits_deprecation(self):
+        import warnings
+        from scaleinvariance import FIF_1D
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            FIF_1D(128, alpha=1.8, C1=0.1, H=0.3,
+                   kernel_construction_method_observable='spectral_odd')
+        assert any(issubclass(wi.category, DeprecationWarning) for wi in w)
+
+    def test_observable_kernel_odd_axes_zero_mean_output(self):
+        from scaleinvariance import FIF_1D
+        out = FIF_1D(1024, alpha=1.8, C1=0.1, H=0.3,
+                     observable_kernel_odd_axes=True)
+        assert abs(out.mean()) < 1e-5
+        assert abs(out.std() - 1.0) < 1e-5
+
+    def test_causal_and_odd_same_axis_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="cannot be both causal and odd"):
+            FIF_1D(128, alpha=1.8, C1=0.1, H=0.3,
+                   causal=True, observable_kernel_odd_axes=True)
+
+    def test_naive_observable_with_odd_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="naive"):
+            FIF_1D(128, alpha=1.8, C1=0.1, H=0.3,
+                   kernel_construction_method_observable='naive',
+                   observable_kernel_odd_axes=True)
+
+    def test_H_zero_with_odd_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="H=0"):
+            FIF_1D(128, alpha=1.8, C1=0.1, H=0.0,
+                   observable_kernel_odd_axes=True)
+
+
 class TestKernelConsistency:
     """Cross-method consistency checks."""
 

@@ -303,16 +303,17 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         boundary conditions. If False, doubles simulation size internally then
         returns only the first half to eliminate periodicity artifacts.
     observable_kernel_odd_axes : bool or tuple of bool, optional
-        Make the observable kernel antisymmetric along the specified axes —
-        the kernel is multiplied by ``Π_{j in odd_axes} sign(x_j)``. In 1D
-        this is just ``True``/``False`` (or a length-1 tuple). Yields a
-        zero-mean process by construction; output is normalized to zero mean
-        and unit standard deviation rather than unit mean.
-        Supported with ``kernel_construction_method_observable`` in
-        ``{'spectral', 'LS2010', 'naive'}``. The same axis cannot be both
-        causal and odd — causality zeros the negative-coordinate half,
-        leaving nothing for the odd sign-flip to act on. Flux kernels cannot
-        be made odd.
+        Make the observable kernel antisymmetric along the specified axes.
+        Implemented as a Fourier-space phase factor ``i^k · Π sign(f_j)``,
+        which leaves the magnitude spectrum unchanged (so Hurst recovery
+        works identically to the even kernel) and yields a zero-mean output
+        by construction. The output is normalized to zero mean and unit
+        standard deviation rather than unit mean.
+        **Requires ``kernel_construction_method_observable='spectral'``** —
+        real-space sign-flipping of the LS2010 or naive kernel does not
+        preserve the magnitude spectrum because the smooth correction term
+        contributes a non-trivial low-frequency FT. The same axis cannot be
+        both causal and odd; flux kernels cannot be made odd.
 
     Returns
     -------
@@ -519,19 +520,28 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         )
         del flux
     else:
+        if has_odd:
+            # The real-space LS2010 kernel mixes a power-law part with a
+            # smooth correction term (~exp(-|r|/3)). Multiplying the kernel
+            # by sign(x) only preserves the magnitude spectrum for a pure
+            # power law — once the smooth correction is sign-flipped it
+            # acquires a non-trivial low-frequency FT, biasing the observable
+            # PSD and the recovered Hurst exponent. The clean way to obtain
+            # an antisymmetric observable kernel is via the Fourier path,
+            # which multiplies by `i·sign(f)` and preserves PSDs exactly.
+            raise ValueError(
+                "observable_kernel_odd_axes requires "
+                "kernel_construction_method_observable='spectral'. Real-space "
+                "sign-flipping the LS2010 / naive kernel does not preserve the "
+                "magnitude spectrum (the smooth correction term contributes a "
+                "non-trivial low-frequency FT)."
+            )
         if kernel_construction_method_observable == 'LS2010':
             kernel2 = create_kernel_LS2010(size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
                                           causal=causal, outer_scale=outer_scale,
                                           outer_scale_width_factor=outer_scale_width_factor,
-                                          final_power=None,
-                                          odd_axes=odd_tuple_1d if has_odd else None)
+                                          final_power=None)
         elif kernel_construction_method_observable == 'naive':
-            if has_odd:
-                raise ValueError(
-                    "observable_kernel_odd_axes is not supported with "
-                    "kernel_construction_method_observable='naive'. Use "
-                    "'spectral' or 'LS2010'."
-                )
             kernel2 = create_kernel_naive(size, obs_kernel_exponent, causal=causal, outer_scale=outer_scale,
                                          outer_scale_width_factor=outer_scale_width_factor)
         else:
@@ -640,14 +650,18 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         observable kernels for consistency. Not supported with
         ``kernel_construction_method_observable='spectral'``.
     observable_kernel_odd_axes : bool or tuple of bool, optional
-        Make the observable kernel antisymmetric (sign-flipped on the
-        negative half) along the specified axes — the kernel is multiplied
-        by ``Π_{j in odd_axes} sign(x_j)``. ``True`` applies to all axes; a
-        tuple of bool specifies per-axis. Yields a zero-mean process by
-        construction; output is normalized to zero mean and unit standard
-        deviation rather than unit mean. Supported with the ``'spectral'`` and
-        ``'LS2010'`` observable methods. The same axis cannot be both causal
-        and odd. Flux kernels cannot be made odd.
+        Make the observable kernel antisymmetric along the specified axes.
+        Implemented as a Fourier-space phase factor ``i^k · Π sign(f_j)``,
+        which preserves the magnitude spectrum and yields zero-mean output
+        by construction. Output is normalized to zero mean and unit standard
+        deviation rather than unit mean.
+        **Requires ``kernel_construction_method_observable='spectral'``** —
+        the real-space LS2010 kernel mixes a power law with a smooth
+        correction, and sign-flipping the corrected kernel does not preserve
+        the magnitude spectrum. As a consequence, ``odd_axes`` is also not
+        available alongside a custom ``scale_metric`` (which itself requires
+        the LS2010 path). The same axis cannot be both causal and odd; flux
+        kernels cannot be made odd.
 
     Returns
     -------
@@ -893,11 +907,22 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         )
         del flux
     elif kernel_construction_method_observable == 'LS2010':
+        if has_odd:
+            # See FIF_1D for the same restriction. Real-space sign-flipping
+            # the LS2010 kernel biases the magnitude spectrum because the
+            # smooth correction term is not a pure power law.
+            raise ValueError(
+                "observable_kernel_odd_axes requires "
+                "kernel_construction_method_observable='spectral'. Real-space "
+                "sign-flipping the LS2010 kernel does not preserve the "
+                "magnitude spectrum (the smooth correction term contributes "
+                "a non-trivial low-frequency FT). For GSI / custom scale_metric "
+                "use cases, odd_axes is not currently supported."
+            )
         kernel2 = create_kernel_LS2010(sim_size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
                                       causal=causal_tuple, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=None, scale_metric=scale_metric,
-                                      odd_axes=odd_tuple if has_odd else None)
+                                      final_power=None, scale_metric=scale_metric)
         observable = periodic_convolve_nd(flux, kernel2)
         del flux, kernel2
     else:
