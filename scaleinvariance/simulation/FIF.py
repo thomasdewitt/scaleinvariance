@@ -617,8 +617,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method_flux='LS2010', kernel_construction_method_observable='spectral',
-           periodic=False, scale_metric=None, scale_metric_dim=None, causal=False,
-           observable_kernel_odd_axes=None):
+           periodic=False, scale_metric=None, elliptical_dim=None, causal=False,
+           observable_kernel_odd_axes=None, scale_metric_dim=None):
     """
     Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -678,12 +678,17 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         and periodic=False, scale_metric.shape must be (512, 512).
         **Note**: For LS2010 method, the metric should use dx=2 spacing to match
         the kernel construction grid.
+    elliptical_dim : float, optional
+        Elliptical dimension ``D_el`` of the GSI scale metric — the effective
+        scaling dimension that may differ from the embedding spatial
+        dimension. For canonical anisotropy with stratification exponent
+        ``Hz``: ``D_el = 1 + Hz`` (2D), ``2 + Hz`` (3D), ``d - 1 + Hz``
+        in d-D. If None (default), uses the spatial dimension (no
+        anisotropy correction).
     scale_metric_dim : float, optional
-        Dimension for scaling exponents in kernel calculations. This may differ from
-        the spatial dimension when using GSI norms with non-integer dimensions.
-        If None (default), uses the spatial dimension (inferred from size tuple length).
-        **Use case**: In Generalized Scale Invariance (GSI), the scaling dimension
-        may be non-integer and different from the embedding space dimension.
+        **Deprecated** — renamed to ``elliptical_dim``. If both are passed,
+        a ``ValueError`` is raised. ``scale_metric_dim`` will be removed in
+        a future release.
     causal : bool or tuple of bool, optional
         Make the FIF kernels causal along the specified axes. ``False`` (default)
         gives the fully acausal field. ``True`` makes every axis causal; a
@@ -753,7 +758,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     >>> scale_metric = (X**2 + (Y/2)**2)**0.5  # y-direction scales faster
     >>> # Use non-integer dimension for GSI
     >>> fif = FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
-    ...              scale_metric=scale_metric, scale_metric_dim=2.3,
+    ...              scale_metric=scale_metric, elliptical_dim=2.3,
     ...              kernel_construction_method_observable='LS2010')
 
     Notes
@@ -809,14 +814,30 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                 "scale_metric must be finite and strictly positive everywhere"
             )
 
-    # Set dimension for scaling exponents (defaults to spatial dimension).
-    # Track whether the user explicitly supplied a value — needed below so
-    # the C1=0 shortcut can reject silently-ignored non-defaults.
-    scale_metric_dim_was_provided = scale_metric_dim is not None
-    if scale_metric_dim is None:
-        scale_metric_dim = float(ndim)
+    # Deprecation: accept the legacy `scale_metric_dim` name but emit a
+    # DeprecationWarning. Refuse conflicting input (both passed).
+    if scale_metric_dim is not None:
+        if elliptical_dim is not None:
+            raise ValueError(
+                "Pass either `elliptical_dim` or the deprecated "
+                "`scale_metric_dim`, not both."
+            )
+        warnings.warn(
+            "`scale_metric_dim` is deprecated; use `elliptical_dim` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        elliptical_dim = scale_metric_dim
+
+    # Set elliptical dimension for scaling exponents (defaults to spatial
+    # dimension — i.e. isotropic). Track whether the user explicitly
+    # supplied a value so the C1=0 shortcut can reject silently-ignored
+    # non-defaults.
+    elliptical_dim_was_provided = elliptical_dim is not None
+    if elliptical_dim is None:
+        elliptical_dim = float(ndim)
     else:
-        scale_metric_dim = float(scale_metric_dim)
+        elliptical_dim = float(elliptical_dim)
 
     # Normalize causal / observable_kernel_odd_axes to length-ndim tuples and
     # validate that no axis is both.
@@ -874,9 +895,9 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                 "is isotropic. For anisotropic fBm-like simulations you must "
                 "set C1 > 0 and use the LS2010 path."
             )
-        if scale_metric_dim_was_provided:
+        if elliptical_dim_was_provided:
             raise ValueError(
-                "scale_metric_dim is not supported with C1=0 (the fBm "
+                "elliptical_dim is not supported with C1=0 (the fBm "
                 "shortcut has no kernel scaling dimension to set)."
             )
         return B.to_numpy(fBm_ND_circulant(output_size, H, periodic=periodic_tuple))
@@ -932,8 +953,8 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # Create flux kernel (kernel 1)
     # Calculate exponent and normalization parameters for N-D flux kernel
     alpha_prime = 1.0 / (1.0 - 1.0/alpha)
-    flux_exponent = -scale_metric_dim / alpha_prime
-    flux_norm_ratio_exp = -scale_metric_dim / alpha
+    flux_exponent = -elliptical_dim / alpha_prime
+    flux_norm_ratio_exp = -elliptical_dim / alpha
     flux_final_power = 1.0 / (alpha - 1.0)
 
     if kernel_construction_method_flux == 'LS2010':
@@ -970,7 +991,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
 
     # Observable kernel (kernel 2) real-space power-law parameters, derived
     # from the Hurst exponent H and the scaling dimension.
-    obs_kernel_exponent = -scale_metric_dim + H
+    obs_kernel_exponent = -elliptical_dim + H
     obs_kernel_norm_ratio_exp = -H
 
     if kernel_construction_method_observable == 'spectral':

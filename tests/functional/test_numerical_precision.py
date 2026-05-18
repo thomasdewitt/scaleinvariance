@@ -252,7 +252,7 @@ class TestScaleMetricValidation:
         bad[0, 0] = 0.0  # zero triggers distance**negative → inf
         with pytest.raises(ValueError, match="finite and strictly positive"):
             FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
-                   scale_metric=bad, scale_metric_dim=2.0,
+                   scale_metric=bad, elliptical_dim=2.0,
                    kernel_construction_method_observable='LS2010')
 
     def test_nan_scale_metric_raises(self):
@@ -262,7 +262,7 @@ class TestScaleMetricValidation:
         bad[5, 5] = np.nan
         with pytest.raises(ValueError, match="finite and strictly positive"):
             FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
-                   scale_metric=bad, scale_metric_dim=2.0,
+                   scale_metric=bad, elliptical_dim=2.0,
                    kernel_construction_method_observable='LS2010')
 
 

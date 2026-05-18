@@ -102,7 +102,7 @@ class TestFIFND:
         sim_size = (128, 128)
         metric = scaleinvariance.canonical_scale_metric(sim_size, ls=20.0, Hz=0.556)
         fif = scaleinvariance.FIF_ND(size, 1.8, 0.1, H=0.3, periodic=False,
-                                     scale_metric=metric, scale_metric_dim=1 + 0.556,
+                                     scale_metric=metric, elliptical_dim=1 + 0.556,
                                      kernel_construction_method_observable='LS2010')
         assert fif.shape == size
         assert not np.any(np.isnan(fif))

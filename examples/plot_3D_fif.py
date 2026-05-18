@@ -88,13 +88,13 @@ def main():
 
     # Prepare scale metric if anisotropic
     scale_metric = None
-    scale_metric_dim = None
+    elliptical_dim = None
     if args.anisotropic:
         print(f"  Using canonical anisotropic metric: spheroscale={args.spheroscale}, Hz={args.Hz}")
         # For non-periodic FIF, the simulation domain is doubled
         scale_metric = canonical_scale_metric(size, ls=args.spheroscale, Hz=args.Hz)
         
-        scale_metric_dim = 23/9
+        elliptical_dim = 23/9
 
     # Generate 3D FIF
     field = scaleinvariance.FIF_ND(
@@ -104,7 +104,7 @@ def main():
         H=args.H,
         periodic=True,
         scale_metric=scale_metric,
-        scale_metric_dim=scale_metric_dim
+        elliptical_dim=elliptical_dim
     )
 
     print(f"Field shape: {field.shape}")

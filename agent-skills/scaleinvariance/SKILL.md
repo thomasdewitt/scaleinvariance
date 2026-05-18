@@ -271,7 +271,8 @@ scaleinvariance.FIF_ND(
     kernel_construction_method_observable='spectral', # 'spectral' or 'LS2010'
     periodic=False,            # Bool or tuple of bool for per-axis periodicity
     scale_metric=None,         # Custom GSI distance metric
-    scale_metric_dim=None,     # Scaling dimension (default: spatial dimension)
+    elliptical_dim=None,       # GSI elliptical dimension D_el (default: spatial dim).
+                               # `scale_metric_dim` is the deprecated old name.
     causal=False,              # Bool or tuple-of-bool — per-axis causal kernels.
                                # Requires LS2010 observable (spectral does not
                                # support causal). Variance compensated by 2^k
@@ -410,12 +411,14 @@ scaleinvariance.canonical_scale_metric(
 ) -> numpy.ndarray   # Scale metric with dx=2 spacing (matches LS2010 kernels)
 ```
 
-**IMPORTANT for GSI with FIF_ND**: When using `canonical_scale_metric`, you must also specify `scale_metric_dim`:
+**IMPORTANT for GSI with FIF_ND**: When using `canonical_scale_metric`, you must also specify `elliptical_dim` (the GSI elliptical dimension `D_el`):
 
-- For 2D: `scale_metric_dim = 1 + Hz`
-- For 3D: `scale_metric_dim = 2 + Hz`
-- For 4D: `scale_metric_dim = 3 + Hz`
+- For 2D: `elliptical_dim = 1 + Hz`
+- For 3D: `elliptical_dim = 2 + Hz`
+- For 4D: `elliptical_dim = 3 + Hz`
 - ...
+
+(The legacy parameter `scale_metric_dim` still works with a `DeprecationWarning` and will be removed in a future release.)
 
 ```python
 # Example: 2D GSI simulation
@@ -425,7 +428,7 @@ Hz = 0.556
 ls = 100.0
 metric = scaleinvariance.canonical_scale_metric(sim_size, ls=ls, Hz=Hz)
 fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
-                              scale_metric=metric, scale_metric_dim=1 + Hz)
+                              scale_metric=metric, elliptical_dim=1 + Hz)
 ```
 
 ## Parameter Interpretation
@@ -595,7 +598,7 @@ metric = scaleinvariance.canonical_scale_metric(sim_size, ls=ls, Hz=Hz)
 
 # Generate GSI multifractal
 fif = scaleinvariance.FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
-                              scale_metric=metric, scale_metric_dim=1 + Hz)
+                              scale_metric=metric, elliptical_dim=1 + Hz)
 
 plt.figure(figsize=(6, 5))
 plt.imshow(np.log(fif), cmap='viridis', aspect='auto')

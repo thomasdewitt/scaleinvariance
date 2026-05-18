@@ -660,10 +660,10 @@ class TestC1ZeroStrictness:
         with pytest.raises(ValueError, match="scale_metric"):
             FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, scale_metric=sm)
 
-    def test_nd_c1_zero_with_scale_metric_dim_raises(self):
+    def test_nd_c1_zero_with_elliptical_dim_raises(self):
         from scaleinvariance import FIF_ND
-        with pytest.raises(ValueError, match="scale_metric_dim"):
-            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, scale_metric_dim=1.7)
+        with pytest.raises(ValueError, match="elliptical_dim"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, elliptical_dim=1.7)
 
     def test_nd_c1_zero_with_outer_scale_raises(self):
         from scaleinvariance import FIF_ND
@@ -674,6 +674,55 @@ class TestC1ZeroStrictness:
         from scaleinvariance import FIF_ND
         with pytest.raises(ValueError, match="kernel_construction_method_observable"):
             FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3,
+                   kernel_construction_method_observable='LS2010')
+
+
+class TestEllipticalDimRename:
+    """Deprecation alias tests for scale_metric_dim → elliptical_dim."""
+
+    def test_elliptical_dim_works(self):
+        from scaleinvariance import FIF_ND
+        out = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                     elliptical_dim=2.0,
+                     kernel_construction_method_observable='LS2010')
+        assert out.shape == (64, 64)
+
+    def test_scale_metric_dim_alias_emits_deprecation(self):
+        """Legacy scale_metric_dim should still work but warn."""
+        import warnings
+        from scaleinvariance import FIF_ND
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   scale_metric_dim=2.0,
+                   kernel_construction_method_observable='LS2010')
+        assert any(issubclass(wi.category, DeprecationWarning) for wi in w)
+
+    def test_scale_metric_dim_matches_elliptical_dim(self):
+        """Output should be identical whether the legacy or new name is used."""
+        import numpy as np
+        import warnings
+        from scaleinvariance import FIF_ND
+        from scaleinvariance.simulation.FIF import _extremal_levy_core
+        from scaleinvariance import backend as B
+        np.random.seed(0)
+        noise = B.to_numpy(_extremal_levy_core(1.8, size=64 * 64)).reshape((64, 64))
+        new = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                     levy_noise=noise, elliptical_dim=2.0,
+                     kernel_construction_method_observable='LS2010')
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            old = FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                         levy_noise=noise, scale_metric_dim=2.0,
+                         kernel_construction_method_observable='LS2010')
+        np.testing.assert_allclose(new, old, rtol=1e-6, atol=1e-6)
+
+    def test_both_names_raises(self):
+        """Passing both elliptical_dim and scale_metric_dim → ValueError."""
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="not both"):
+            FIF_ND((64, 64), alpha=1.8, C1=0.1, H=0.3, periodic=True,
+                   elliptical_dim=2.0, scale_metric_dim=2.0,
                    kernel_construction_method_observable='LS2010')
 
 
