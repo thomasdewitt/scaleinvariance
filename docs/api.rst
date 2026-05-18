@@ -28,6 +28,24 @@ Simulation
 
 .. autofunction:: scaleinvariance.FIF_ND
 
+Generalized Scale Invariance (GSI)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``FIF_ND`` supports anisotropic GSI scaling via a user-supplied
+``scale_metric`` (an N-D array of generalized distances) together with
+the ``elliptical_dim`` parameter (the GSI elliptical dimension
+``D_el``). For the canonical self-affine anisotropy with stratification
+exponent ``Hz``, ``D_el = d - 1 + Hz`` in ``d`` dimensions. The
+``canonical_scale_metric`` helper builds the standard stratified
+metric (last axis anisotropic, all others isotropic) on the dx=2 grid
+expected by the LS2010 kernel construction.
+
+GSI in ``FIF_ND`` currently requires
+``kernel_construction_method_observable='LS2010'`` — the spectral
+observable path does not accept a custom ``scale_metric``.
+
+.. autofunction:: scaleinvariance.canonical_scale_metric
+
 Analysis
 --------
 

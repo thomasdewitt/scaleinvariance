@@ -6,7 +6,7 @@ Simulation and analysis tools for scale-invariant processes and multifractal fie
 
 [Documentation](https://scaleinvariance.readthedocs.io/en/latest/index.html)
 
-View example FIF simulation output in the [Multifractal Explorer](https://thomasddewitt.com/visuals-and-tools/multifractal/index.html)
+View example FIF simulation output in the [Multifractal Explorer](https://thomasddewitt.com/thought-cloud/multifractal-explorer/)
 
 ## Current Features
 
@@ -32,9 +32,10 @@ All methods support multi-dimensional arrays, averaging over dimensions that are
 - **1D fractional Brownian motion**: `fBm_1D_circulant()` - Fast spectral synthesis
 - **N-D fractional Brownian motion**: `fBm_ND_circulant()` - Isotropic N-D (2D, 3D, 4D, etc.) fBm fields
 - **1D fBm (fractional integration)**: `fBm_1D()` - Extended Hurst range (-0.5, 1.5) with causal/acausal kernels
+- **Generalized Scale Invariance (GSI)**: `FIF_ND()` accepts a custom `scale_metric` together with the GSI elliptical dimension `elliptical_dim` (`D_el`) for anisotropic / stratified multifractals. `canonical_scale_metric()` builds the canonical stratified metric (last axis anisotropic with stratification exponent `Hz`).
 
 For FIF simulation methods (`FIF_1D`, `FIF_ND`), the currently supported range is `0.5 <= alpha <= 2` with `alpha != 1`.
-The kernel construction method `'LS2010'` (Lovejoy & Schertzer 2010) is used for flux kernels. For observable kernels, both `'LS2010'` and `'spectral'` are supported.
+The kernel construction method `'LS2010'` (Lovejoy & Schertzer 2010) is used for flux kernels. For observable kernels, both `'LS2010'` and `'spectral'` are supported. GSI with a custom `scale_metric` requires `kernel_construction_method_observable='LS2010'`.
 
 ## Installation
 
@@ -90,7 +91,10 @@ scaleinvariance.set_num_threads(8)
 ## Basic Usage
 
 ```python
-from scaleinvariance import fBm_1D_circulant, fBm_ND_circulant, FIF_1D, haar_fluctuation_hurst
+from scaleinvariance import (
+    fBm_1D_circulant, fBm_ND_circulant, FIF_1D, FIF_ND,
+    canonical_scale_metric, haar_fluctuation_hurst,
+)
 
 # Generate 1D fractional Brownian motion
 fBm_1d = fBm_1D_circulant(1024, H=0.7)
@@ -115,6 +119,17 @@ fif_custom = FIF_1D(
     kernel_construction_method_observable='spectral',
 )
 
+# Anisotropic 2D GSI multifractal (canonical stratified metric)
+size = (256, 256)
+sim_size = (512, 512)        # non-periodic -> doubled domain for the metric
+Hz = 0.556                    # canonical atmospheric stratification
+metric = canonical_scale_metric(sim_size, ls=100.0, Hz=Hz)
+fif_gsi = FIF_ND(
+    size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
+    scale_metric=metric, elliptical_dim=1 + Hz,
+    kernel_construction_method_observable='LS2010',
+)
+
 # Estimate Hurst exponent
 H_est, H_err = haar_fluctuation_hurst(fBm_1d)
 print(f"Estimated H = {H_est:.3f} ± {H_err:.3f}")
@@ -136,9 +151,37 @@ For fBm:
 - `fBm_ND_circulant()` is recommended. It uses a spectral synthesis method and produces essentially perfectly scale invariant fields.
 - `fBm_1D()` is included for comparsion or for causal simulations.
 
+## Generalized Scale Invariance (GSI)
+
+`FIF_ND()` supports anisotropic / stratified multifractals via two
+parameters:
+
+- `scale_metric`: an N-D array of generalized distances on the
+  simulation grid. Must match the simulation domain shape after
+  accounting for periodicity (domain is doubled along non-periodic
+  axes). Values must be finite and strictly positive everywhere.
+- `elliptical_dim`: the GSI elliptical dimension `D_el`. For canonical
+  stratified anisotropy with exponent `Hz`, `D_el = d - 1 + Hz` in `d`
+  dimensions (i.e. `1 + Hz` in 2D, `2 + Hz` in 3D, …). Defaults to the
+  spatial dimension (isotropic).
+
+The helper `canonical_scale_metric(size, ls, Hz)` builds the standard
+stratified metric — the last axis is anisotropic with exponent `Hz`,
+all other axes are isotropic — on the `dx=2` grid expected by the
+LS2010 kernel construction.
+
+GSI with a custom `scale_metric` currently requires
+`kernel_construction_method_observable='LS2010'`; it is not supported
+on the default `'spectral'` observable path, and is therefore
+incompatible with `observable_kernel_odd_axes`.
+
+> Note: the older keyword `scale_metric_dim` has been renamed to
+> `elliptical_dim`. The old name still works but emits a
+> `DeprecationWarning` and will be removed in a future release.
+
 ## Examples
 
-Work in progress. See [Multifractal Explorer](https://thomasddewitt.com/visuals/multifractal/index.html) for visuals.
+Work in progress. See [Multifractal Explorer](https://thomasddewitt.com/thought-cloud/multifractal-explorer/) for visuals.
 
 Run examples:
 
