@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.10.0**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.11.0**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
