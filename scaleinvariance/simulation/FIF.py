@@ -356,6 +356,23 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     """
     # Legacy: 'spectral_odd' method string → translate to 'spectral' + odd_axes=True
     if kernel_construction_method_observable == 'spectral_odd':
+        # If the caller also passed observable_kernel_odd_axes explicitly,
+        # the only intent consistent with 'spectral_odd' is odd=True. An
+        # explicit False (or any all-False tuple) would silently neutralise
+        # the deprecated method — refuse it.
+        if observable_kernel_odd_axes is not None:
+            odd_check = _normalize_axis_flag(
+                observable_kernel_odd_axes, 1, 'observable_kernel_odd_axes'
+            )
+            if not any(odd_check):
+                raise ValueError(
+                    "kernel_construction_method_observable='spectral_odd' is "
+                    "the deprecated form of 'spectral' + "
+                    "observable_kernel_odd_axes=True; explicitly passing "
+                    "observable_kernel_odd_axes=False contradicts that "
+                    "intent. Drop the deprecated method or set "
+                    "observable_kernel_odd_axes=True."
+                )
         warnings.warn(
             "kernel_construction_method_observable='spectral_odd' is deprecated; "
             "use kernel_construction_method_observable='spectral' with "
@@ -364,8 +381,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
             stacklevel=2,
         )
         kernel_construction_method_observable = 'spectral'
-        if observable_kernel_odd_axes is None:
-            observable_kernel_odd_axes = True
+        observable_kernel_odd_axes = True
 
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
@@ -374,8 +390,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     if not periodic:
         size *= 2   # duplicate to eliminate periodicity
 
-    # Normalize observable_kernel_odd_axes to a 1-tuple of bool and validate
-    # against causal (same axis cannot be both).
+    # Normalize causal / observable_kernel_odd_axes to 1-tuples of bool and
+    # validate against each other (same axis cannot be both). Rebind ``causal``
+    # to the normalized scalar so subsequent ``if causal:`` truthy checks are
+    # safe — a raw ``causal=(False,)`` would otherwise be truthy (non-empty
+    # tuple) and incorrectly trigger the causal code paths.
     causal_tuple_1d = _normalize_axis_flag(causal, 1, 'causal')
     odd_tuple_1d = _normalize_axis_flag(observable_kernel_odd_axes, 1,
                                         'observable_kernel_odd_axes')
@@ -385,6 +404,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
             "negative-coordinate half, leaving no antisymmetric structure "
             "for the odd sign-flip to act on."
         )
+    causal = causal_tuple_1d[0]
     has_odd = odd_tuple_1d[0]
 
     if C1 == 0 and not causal:
@@ -394,6 +414,30 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
             raise ValueError(
                 "observable_kernel_odd_axes is not supported with C1=0 "
                 "(fBm path has no observable kernel)."
+            )
+        # The fBm shortcut uses fBm_1D_circulant, which has its own spectral
+        # circulant kernel and ignores the FIF kernel selection. To avoid
+        # silently dropping user intent, reject any non-default kernel /
+        # outer-scale options instead of pretending to honour them.
+        if outer_scale is not None:
+            raise ValueError(
+                "outer_scale is not supported with C1=0 (the fBm shortcut "
+                "uses fBm_1D_circulant, which has no outer-scale parameter)."
+            )
+        if outer_scale_width_factor != 2.0:
+            raise ValueError(
+                "outer_scale_width_factor is not supported with C1=0."
+            )
+        if kernel_construction_method_flux != 'LS2010':
+            raise ValueError(
+                "kernel_construction_method_flux is not supported with C1=0 "
+                "(the fBm shortcut uses fBm_1D_circulant, which has no flux "
+                "kernel)."
+            )
+        if kernel_construction_method_observable != 'spectral':
+            raise ValueError(
+                "kernel_construction_method_observable is not supported with "
+                "C1=0 (the fBm shortcut has no observable kernel)."
             )
         result = fBm_1D_circulant(output_size, H, periodic=periodic)
         return B.to_numpy(result)
@@ -765,7 +809,10 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                 "scale_metric must be finite and strictly positive everywhere"
             )
 
-    # Set dimension for scaling exponents (defaults to spatial dimension)
+    # Set dimension for scaling exponents (defaults to spatial dimension).
+    # Track whether the user explicitly supplied a value — needed below so
+    # the C1=0 shortcut can reject silently-ignored non-defaults.
+    scale_metric_dim_was_provided = scale_metric_dim is not None
     if scale_metric_dim is None:
         scale_metric_dim = float(ndim)
     else:
@@ -797,6 +844,40 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
             raise ValueError(
                 "observable_kernel_odd_axes is not supported with C1=0 "
                 "(fBm path has no observable kernel)."
+            )
+        # The fBm shortcut uses fBm_ND_circulant, which is isotropic and
+        # spectral — it has no flux/observable kernel, no outer-scale taper,
+        # and no scale_metric. Reject any non-default kernel / scale options
+        # so they aren't silently dropped.
+        if outer_scale is not None:
+            raise ValueError(
+                "outer_scale is not supported with C1=0 (the fBm shortcut "
+                "uses fBm_ND_circulant, which has no outer-scale parameter)."
+            )
+        if outer_scale_width_factor != 2.0:
+            raise ValueError(
+                "outer_scale_width_factor is not supported with C1=0."
+            )
+        if kernel_construction_method_flux != 'LS2010':
+            raise ValueError(
+                "kernel_construction_method_flux is not supported with C1=0 "
+                "(the fBm shortcut has no flux kernel)."
+            )
+        if kernel_construction_method_observable != 'spectral':
+            raise ValueError(
+                "kernel_construction_method_observable is not supported with "
+                "C1=0 (the fBm shortcut has no observable kernel)."
+            )
+        if scale_metric is not None:
+            raise ValueError(
+                "scale_metric is not supported with C1=0 — fBm_ND_circulant "
+                "is isotropic. For anisotropic fBm-like simulations you must "
+                "set C1 > 0 and use the LS2010 path."
+            )
+        if scale_metric_dim_was_provided:
+            raise ValueError(
+                "scale_metric_dim is not supported with C1=0 (the fBm "
+                "shortcut has no kernel scaling dimension to set)."
             )
         return B.to_numpy(fBm_ND_circulant(output_size, H, periodic=periodic_tuple))
 

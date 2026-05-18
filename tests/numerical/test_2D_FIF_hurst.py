@@ -44,13 +44,16 @@ def run_combination(H, C1, alpha):
     else:
         intermittency_correction = 0.0
 
-    # Generate stack of realizations
+    # Generate stack of realizations. The C1=0 path routes to fBm_ND_circulant
+    # which has no FIF kernel selection — pass only the defaults there to
+    # avoid the explicit "non-default kernel option with C1=0" guard.
     realizations = []
+    fif_kwargs = dict(periodic=False)
+    if C1 > 0:
+        fif_kwargs['kernel_construction_method_flux'] = KERNEL_METHOD_FLUX
+        fif_kwargs['kernel_construction_method_observable'] = KERNEL_METHOD_OBSERVABLE
     for i in range(N_REALIZATIONS):
-        fif = FIF_ND((SIZE, SIZE), alpha, C1, H,
-                     kernel_construction_method_flux=KERNEL_METHOD_FLUX,
-                     kernel_construction_method_observable=KERNEL_METHOD_OBSERVABLE,
-                     periodic=False)
+        fif = FIF_ND((SIZE, SIZE), alpha, C1, H, **fif_kwargs)
         realizations.append(fif)
 
     # Stack along axis 0: shape = (N_REALIZATIONS, SIZE, SIZE)

@@ -573,6 +573,109 @@ class TestFIF_1D_OddAndCausalValidation:
             FIF_1D(128, alpha=1.8, C1=0.1, H=0.0,
                    observable_kernel_odd_axes=True)
 
+    def test_spectral_odd_with_explicit_odd_false_raises(self):
+        """The deprecated 'spectral_odd' method string cannot be combined
+        with observable_kernel_odd_axes=False — that would silently
+        neutralise the odd kernel intent."""
+        import warnings
+        from scaleinvariance import FIF_1D
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', DeprecationWarning)
+            # The DeprecationWarning path is normally fine; here we want to
+            # make sure the conflict raises *before* the warning is emitted.
+            with pytest.raises(ValueError, match="contradicts"):
+                FIF_1D(128, alpha=1.8, C1=0.1, H=0.3,
+                       kernel_construction_method_observable='spectral_odd',
+                       observable_kernel_odd_axes=False)
+
+    def test_causal_tuple_false_is_acausal(self):
+        """``causal=(False,)`` and ``causal=False`` must be equivalent — both
+        mean no axis is causal. Previously the raw tuple's truthiness
+        (a non-empty tuple is truthy) incorrectly triggered causal codepaths."""
+        import numpy as np
+        from scaleinvariance import FIF_1D
+        from scaleinvariance.simulation.FIF import extremal_levy
+        size = 1024
+        noise = extremal_levy(alpha=1.8, size=size, seed=99)
+        a = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, levy_noise=noise, causal=False,
+                   kernel_construction_method_observable='LS2010')
+        b = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, levy_noise=noise, causal=(False,),
+                   kernel_construction_method_observable='LS2010')
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6)
+
+    def test_causal_tuple_true_matches_bool_true(self):
+        """``causal=(True,)`` and ``causal=True`` must be equivalent."""
+        import numpy as np
+        from scaleinvariance import FIF_1D
+        from scaleinvariance.simulation.FIF import extremal_levy
+        size = 1024
+        noise = extremal_levy(alpha=1.8, size=size, seed=101)
+        a = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, levy_noise=noise, causal=True,
+                   kernel_construction_method_observable='LS2010')
+        b = FIF_1D(size, alpha=1.8, C1=0.1, H=0.3, levy_noise=noise, causal=(True,),
+                   kernel_construction_method_observable='LS2010')
+        np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6)
+
+
+class TestC1ZeroStrictness:
+    """C1=0 routes to fBm_*_circulant, which ignores FIF-specific kernel
+    options. Rather than silently dropping non-default values, the API
+    raises so users notice the inconsistency."""
+
+    def test_1d_c1_zero_with_default_options_works(self):
+        from scaleinvariance import FIF_1D
+        out = FIF_1D(256, alpha=1.8, C1=0, H=0.3)
+        assert out.shape == (256,)
+
+    def test_1d_c1_zero_with_outer_scale_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="outer_scale"):
+            FIF_1D(256, alpha=1.8, C1=0, H=0.3, outer_scale=128)
+
+    def test_1d_c1_zero_with_outer_scale_width_factor_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="outer_scale_width_factor"):
+            FIF_1D(256, alpha=1.8, C1=0, H=0.3, outer_scale_width_factor=1.5)
+
+    def test_1d_c1_zero_with_nondefault_observable_method_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="kernel_construction_method_observable"):
+            FIF_1D(256, alpha=1.8, C1=0, H=0.3,
+                   kernel_construction_method_observable='LS2010')
+
+    def test_1d_c1_zero_with_nondefault_flux_method_raises(self):
+        from scaleinvariance import FIF_1D
+        with pytest.raises(ValueError, match="kernel_construction_method_flux"):
+            FIF_1D(256, alpha=1.8, C1=0, H=0.3,
+                   kernel_construction_method_flux='naive')
+
+    def test_nd_c1_zero_with_default_options_works(self):
+        from scaleinvariance import FIF_ND
+        out = FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3)
+        assert out.shape == (64, 64)
+
+    def test_nd_c1_zero_with_scale_metric_raises(self):
+        from scaleinvariance import FIF_ND
+        sm = np.ones((128, 128))  # periodic=False (default) → doubled
+        with pytest.raises(ValueError, match="scale_metric"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, scale_metric=sm)
+
+    def test_nd_c1_zero_with_scale_metric_dim_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="scale_metric_dim"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, scale_metric_dim=1.7)
+
+    def test_nd_c1_zero_with_outer_scale_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="outer_scale"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3, outer_scale=32)
+
+    def test_nd_c1_zero_with_nondefault_observable_method_raises(self):
+        from scaleinvariance import FIF_ND
+        with pytest.raises(ValueError, match="kernel_construction_method_observable"):
+            FIF_ND((64, 64), alpha=1.8, C1=0, H=0.3,
+                   kernel_construction_method_observable='LS2010')
+
 
 class TestKernelConsistency:
     """Cross-method consistency checks."""

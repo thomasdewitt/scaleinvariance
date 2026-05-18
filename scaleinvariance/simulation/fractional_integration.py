@@ -166,14 +166,22 @@ def fractional_integral_spectral(signal, H, outer_scale=None, odd_axes=None):
     cancels out. Applied as a circular convolution, i.e. periodic boundary
     conditions.
 
-    With ``odd_axes`` set, the kernel is multiplied by the per-axis sign
-    pattern ``i^k · Π_{j in odd_axes} sign(f_j)`` where ``k`` is the number
-    of odd axes. This produces a real-space kernel that is antisymmetric in
-    each of those axes (i.e. multiplied by ``Π sign(x_j)``); the output is
-    therefore zero-mean. The complex ``i^k`` phase is real for even ``k`` and
-    purely imaginary for odd ``k`` — the kernel is real-valued in the former
-    case, complex in the latter, but the full-grid Hermitian symmetry holds
-    in both cases so the inverse rfft yields a real output.
+    With ``odd_axes`` set, the Fourier-space response is multiplied by the
+    per-axis phase factor ``i^k · Π_{j in odd_axes} sign(f_j)`` where ``k``
+    is the number of odd axes. This is the N-D Riesz/Hilbert phase operator
+    along the selected axes: it is antisymmetric in each of those axes and
+    magnitude-preserving (``|K_odd|^2 = |K_even|^2`` away from DC/Nyquist
+    planes along odd axes). The real-space kernel that results is *not*
+    simply ``K_even(|r|) · Π sign(x_j)``; in 1D the two coincide up to a
+    constant for pure power laws, but in N-D, and for power-law-plus-smooth
+    kernels (e.g. LS2010), they differ — the spectral implementation is the
+    one that preserves the PSD. The complex ``i^k`` phase is real for even
+    ``k`` and purely imaginary for odd ``k``; the kernel is real-valued in
+    the former case and complex in the latter, but full-grid Hermitian
+    symmetry holds in both cases so the inverse rfft yields a real output.
+    DC bins are zero (``sign(0) = 0``) and, for axes with even length,
+    Nyquist bins along odd axes are also zeroed (the Hermitian constraint
+    at Nyquist is incompatible with antisymmetry).
 
     Standard path remains **not mean-preserving**: the output mean is scaled
     by roughly ``outer_scale**H`` relative to the input mean. The odd-axes

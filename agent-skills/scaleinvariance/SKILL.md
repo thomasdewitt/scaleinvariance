@@ -441,8 +441,8 @@ fif = scaleinvariance.FIF_ND(size, alpha=1.8, C1=0.1, H=0.3, periodic=False,
 ### Intermittency (C1)
 
 - C1 = 0: No intermittency (monofractal) - FIF functions route internally to fBm
-  - FIF_1D with C1=0 requires causal=False (fBm cannot be causal)
-  - FIF_ND with C1=0 works normally (no causal parameter)
+  - Requires ``causal=False`` and ``observable_kernel_odd_axes=None`` in both
+    1D and N-D (fBm has no causal kernel, no observable kernel to make odd)
 - C1 > 0: Multifractal intermittency
 - Typical atmospheric values: C1 ~ 0.05-0.2
 
