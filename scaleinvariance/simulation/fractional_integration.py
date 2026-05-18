@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 from .. import backend as B
+from .kernels import _normalize_axis_flag
 
 
 def _isotropic_rfft_frequencies(shape):
@@ -103,23 +104,80 @@ def _guard_broken_kernel_overflow(
     )
 
 
-def fractional_integral_spectral(signal, H, outer_scale=None):
+def _build_odd_phase_factor(shape, odd_tuple):
+    """Build the per-axis sign product ``Π_{j in odd_axes} sign(f_j)`` on the
+    rfftn grid via broadcasted 1D axes.
+
+    Last axis uses ``rfftfreq`` (non-negative, sign vanishes only at DC); all
+    other axes use ``fftfreq`` (signed). Returns a real-valued array broadcast
+    over the rfft shape. Caller multiplies by the magnitude and the ``i^k``
+    phase to assemble the full complex kernel.
+    """
+    ndim = len(shape)
+    sign_product = None
+    for axis_idx, is_odd in enumerate(odd_tuple):
+        if not is_odd:
+            continue
+        if axis_idx == ndim - 1:
+            f_axis = B.rfftfreq(shape[axis_idx], d=1.0)
+        else:
+            f_axis = B.fftfreq(shape[axis_idx], d=1.0)
+        sign_1d = B.sign(f_axis)
+        broadcast_shape = [1] * ndim
+        broadcast_shape[axis_idx] = f_axis.shape[0]
+        sign_factor = sign_1d.reshape(broadcast_shape)
+        sign_product = sign_factor if sign_product is None else sign_product * sign_factor
+    return sign_product
+
+
+def _zero_odd_axis_nyquist(kernel, shape, odd_tuple):
+    """Zero out the Nyquist bin along each odd axis with even length.
+
+    For an axis ``j`` in ``odd_axes`` with even size, the Nyquist bin aliases
+    to itself under negation. The full-grid Hermitian-symmetry requirement at
+    that bin is inconsistent with the antisymmetric kernel (it would demand
+    ``sign(f_j) = -sign(f_j)``), so we zero it. DC is handled automatically by
+    ``sign(0) = 0``.
+    """
+    ndim = len(shape)
+    for axis_idx, is_odd in enumerate(odd_tuple):
+        if not is_odd or shape[axis_idx] % 2 != 0:
+            continue
+        nyq_idx = shape[axis_idx] // 2
+        slicer = [slice(None)] * ndim
+        slicer[axis_idx] = nyq_idx
+        kernel[tuple(slicer)] = 0
+
+
+def fractional_integral_spectral(signal, H, outer_scale=None, odd_axes=None):
     """
     Apply an acausal spectral fractional integral of order ``H`` to a real signal.
 
-    Computes ``irfftn(rfftn(signal) * |f|^(-H))`` where ``|f|`` is the isotropic
+    Computes ``irfftn(rfftn(signal) * K(f))`` where the default kernel is the
+    radial Riesz response ``K(f) = |f|^(-H)`` and ``|f|`` is the isotropic
     Fourier wavenumber ``sqrt(sum f_i^2)``. Works for 1D and N-D real signals.
     Low frequencies are regularized by clipping ``|f|`` to ``1/outer_scale``;
     the DC bin is overwritten with the value of the kernel at the nearest
-    non-DC bin so the kernel has no spectral notch at DC. This is **not
-    mean-preserving**: the output mean is scaled by roughly ``outer_scale**H``
-    relative to the input mean.
+    non-DC bin so the kernel has no spectral notch at DC (standard path).
 
     The Fourier-space exponent is ``-H`` because fractional integration of
     order ``H`` is convolution with the Riesz potential ``|r|^(H - d)``, whose
     Fourier transform is proportional to ``|f|^(-H)`` — the spatial dimension
     cancels out. Applied as a circular convolution, i.e. periodic boundary
     conditions.
+
+    With ``odd_axes`` set, the kernel is multiplied by the per-axis sign
+    pattern ``i^k · Π_{j in odd_axes} sign(f_j)`` where ``k`` is the number
+    of odd axes. This produces a real-space kernel that is antisymmetric in
+    each of those axes (i.e. multiplied by ``Π sign(x_j)``); the output is
+    therefore zero-mean. The complex ``i^k`` phase is real for even ``k`` and
+    purely imaginary for odd ``k`` — the kernel is real-valued in the former
+    case, complex in the latter, but the full-grid Hermitian symmetry holds
+    in both cases so the inverse rfft yields a real output.
+
+    Standard path remains **not mean-preserving**: the output mean is scaled
+    by roughly ``outer_scale**H`` relative to the input mean. The odd-axes
+    path is exactly zero-mean by construction.
 
     Parameters
     ----------
@@ -132,6 +190,11 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
         and is rejected.
     outer_scale : float, optional
         Low-frequency regularization scale. Defaults to ``max(signal.shape)``.
+    odd_axes : bool or tuple of bool, optional
+        Which axes the kernel should be antisymmetric along (sign-flipped on
+        the negative half). ``None`` (default) or all-False gives the standard
+        even kernel. Multiplies the Fourier response by
+        ``i^k · Π_{j in odd_axes} sign(f_j)``. Zero-mean output.
 
     Returns
     -------
@@ -157,6 +220,9 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
     shape = signal.shape
     ndim = signal.ndim
 
+    odd_tuple = _normalize_axis_flag(odd_axes, ndim, 'odd_axes')
+    has_odd = any(odd_tuple)
+
     if outer_scale is None:
         outer_scale = max(shape)
     elif outer_scale <= 0:
@@ -170,21 +236,44 @@ def fractional_integral_spectral(signal, H, outer_scale=None):
     freqs_reg = B.maximum(freqs, min_freq)
     del freqs
 
-    kernel = freqs_reg ** (-H)
+    magnitude = freqs_reg ** (-H)
     del freqs_reg
 
-    if kernel.shape != rfft_shape:
-        kernel = kernel + B.zeros(rfft_shape, dtype=kernel.dtype)
+    if magnitude.shape != rfft_shape:
+        magnitude = magnitude + B.zeros(rfft_shape, dtype=magnitude.dtype)
 
-    # DC bin: use the kernel value at the nearest non-DC bin. This keeps the
-    # low-frequency kernel smooth (no notch) so positive-valued inputs
-    # (e.g. the FIF unit-mean flux) stay positive after integration.
-    dc_index = (0,) * ndim
-    if B.numel(kernel) == 1:
-        kernel[dc_index] = 1.0
+    if not has_odd:
+        # Standard (even) path: fill DC with nearest non-DC value to avoid a
+        # spectral notch.
+        kernel = magnitude
+        dc_index = (0,) * ndim
+        if B.numel(kernel) == 1:
+            kernel[dc_index] = 1.0
+        else:
+            neighbor_index = (1,) + (0,) * (ndim - 1)
+            kernel[dc_index] = kernel[neighbor_index]
     else:
-        neighbor_index = (1,) + (0,) * (ndim - 1)
-        kernel[dc_index] = kernel[neighbor_index]
+        # Odd path: assemble K = i^k · Π sign(f_j) · |f|^(-H)
+        sign_product = _build_odd_phase_factor(shape, odd_tuple)
+        k_odd = sum(odd_tuple)
+        # i^k splits into a real sign (for even k) and a purely imaginary
+        # factor (for odd k). For k mod 4 = 0: +1; 1: +i; 2: -1; 3: -i.
+        phase_sign = 1.0 if (k_odd // 2) % 2 == 0 else -1.0
+        signed_magnitude = phase_sign * sign_product * magnitude
+        del magnitude, sign_product
+
+        if k_odd % 2 == 0:
+            kernel = signed_magnitude
+        else:
+            # Purely imaginary kernel: store in a complex array's imag part.
+            complex_dtype = B._active_complex_dtype_np()
+            kernel = B.zeros(signed_magnitude.shape, dtype=complex_dtype)
+            kernel.imag[:] = signed_magnitude
+            del signed_magnitude
+
+        # Nyquist along each odd even-sized axis must be zero. DC is already
+        # zero because sign(0) = 0.
+        _zero_odd_axis_nyquist(kernel, shape, odd_tuple)
 
     spectrum = B.rfftn(signal) * kernel
     del kernel

@@ -6,6 +6,7 @@ from .kernels import (
     create_kernel_LS2010,
     create_kernel_naive,
     create_kernel_spectral_odd,
+    _normalize_axis_flag,
 )
 from .fractional_integration import fractional_integral_spectral
 
@@ -237,7 +238,8 @@ def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_const
 
 def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
            outer_scale_width_factor=2.0, kernel_construction_method_flux='LS2010',
-           kernel_construction_method_observable='spectral', periodic=True):
+           kernel_construction_method_observable='spectral', periodic=True,
+           observable_kernel_odd_axes=None):
     """
     Generate a 1D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -245,7 +247,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     specified Hurst exponent H, intermittency parameter C1, and Levy index alpha.
     The method follows Lovejoy & Schertzer 2010, including finite-size corrections.
 
-    Returns field normalized by mean.
+    Returns field normalized by mean (or zero mean, unit std for odd-axis output).
 
     Algorithm:
         1. Generate extremal Lévy noise with stability parameter alpha
@@ -271,9 +273,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         (default), any finite real is accepted (modulo an overflow guard for
         very large positive H at large sizes; see
         :func:`~scaleinvariance.fractional_integral_spectral`). For the
-        ``'LS2010'``, ``'naive'``, and ``'spectral_odd'`` paths, H must lie in
-        ``[-1, 1]``; values in ``[-1, 0)`` are handled by integrating with
-        ``H + 1`` and then taking a first difference.
+        ``'LS2010'`` and ``'naive'`` paths, H must lie in ``[-1, 1]``; values
+        in ``[-1, 0)`` are handled by integrating with ``H + 1`` and then
+        taking a first difference.
     levy_noise : torch.Tensor, optional
         Pre-generated Lévy noise for reproducibility. Must have same size as simulation.
     causal : bool, optional
@@ -293,11 +295,24 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         - 'spectral': Fourier-space power-law transfer function (default, non-causal only)
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections
         - 'naive': Simple power-law kernels without corrections
-        - 'spectral_odd': Odd (antisymmetric) spectral kernel (non-causal only)
+        - 'spectral_odd': **Deprecated** — equivalent to ``'spectral'`` with
+          ``observable_kernel_odd_axes=True``. Will be removed in a future
+          release; use the explicit form.
     periodic : bool, optional
         If True (default), returns full periodic simulation suitable for periodic
         boundary conditions. If False, doubles simulation size internally then
         returns only the first half to eliminate periodicity artifacts.
+    observable_kernel_odd_axes : bool or tuple of bool, optional
+        Make the observable kernel antisymmetric along the specified axes —
+        the kernel is multiplied by ``Π_{j in odd_axes} sign(x_j)``. In 1D
+        this is just ``True``/``False`` (or a length-1 tuple). Yields a
+        zero-mean process by construction; output is normalized to zero mean
+        and unit standard deviation rather than unit mean.
+        Supported with ``kernel_construction_method_observable`` in
+        ``{'spectral', 'LS2010', 'naive'}``. The same axis cannot be both
+        causal and odd — causality zeros the negative-coordinate half,
+        leaving nothing for the odd sign-flip to act on. Flux kernels cannot
+        be made odd.
 
     Returns
     -------
@@ -314,6 +329,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         If provided levy_noise doesn't match specified size
     ValueError
         If alpha < 0.5 or alpha == 1 (not implemented)
+    ValueError
+        If ``causal`` and ``observable_kernel_odd_axes`` are both set on the
+        same axis.
 
     Examples
     --------
@@ -322,6 +340,10 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     >>>
     >>> # Monofractal case (C1=0 routes to fBm, requires causal=False)
     >>> fbm = FIF_1D(1024, alpha=1.8, C1=0, H=0.3, causal=False)
+    >>>
+    >>> # Odd (antisymmetric) observable kernel — zero-mean output
+    >>> fif_odd = FIF_1D(1024, alpha=1.8, C1=0.1, H=0.3,
+    ...                  observable_kernel_odd_axes=True)
 
     Notes
     -----
@@ -331,6 +353,19 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     - C1 = 0: Routes internally to fBm_1D_circulant() for monofractal case
       (requires causal=False since fBm cannot be causal)
     """
+    # Legacy: 'spectral_odd' method string → translate to 'spectral' + odd_axes=True
+    if kernel_construction_method_observable == 'spectral_odd':
+        warnings.warn(
+            "kernel_construction_method_observable='spectral_odd' is deprecated; "
+            "use kernel_construction_method_observable='spectral' with "
+            "observable_kernel_odd_axes=True instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        kernel_construction_method_observable = 'spectral'
+        if observable_kernel_odd_axes is None:
+            observable_kernel_odd_axes = True
+
     if size % 2 != 0:
         raise ValueError("size must be an even number; a power of 2 is recommended.")
 
@@ -338,9 +373,27 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     if not periodic:
         size *= 2   # duplicate to eliminate periodicity
 
+    # Normalize observable_kernel_odd_axes to a 1-tuple of bool and validate
+    # against causal (same axis cannot be both).
+    causal_tuple_1d = _normalize_axis_flag(causal, 1, 'causal')
+    odd_tuple_1d = _normalize_axis_flag(observable_kernel_odd_axes, 1,
+                                        'observable_kernel_odd_axes')
+    if causal_tuple_1d[0] and odd_tuple_1d[0]:
+        raise ValueError(
+            "Axis 0 cannot be both causal and odd; causality zeros the "
+            "negative-coordinate half, leaving no antisymmetric structure "
+            "for the odd sign-flip to act on."
+        )
+    has_odd = odd_tuple_1d[0]
+
     if C1 == 0 and not causal:
         if levy_noise is not None:
             raise ValueError('noise argument not supported for C1=0')
+        if has_odd:
+            raise ValueError(
+                "observable_kernel_odd_axes is not supported with C1=0 "
+                "(fBm path has no observable kernel)."
+            )
         result = fBm_1D_circulant(output_size, H, periodic=periodic)
         return B.to_numpy(result)
 
@@ -434,6 +487,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         #   H_int == 0: original H was 0 → return unit-mean flux.
         #   H_int == -1: original H was -1 (integrate with identity, then
         #     differentiate) → diff the flux and return zero-mean.
+        if has_odd:
+            raise ValueError(
+                "observable_kernel_odd_axes is not meaningful with H=0 "
+                "(the H=0 path skips the observable kernel entirely)."
+            )
         if not periodic:
             flux = flux[:size//2]
         if H_int == -1:
@@ -455,28 +513,31 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         if causal:
             raise ValueError("Spectral observable kernels do not support causal mode. "
                              "Use kernel_construction_method_observable='LS2010' with causal=True.")
-        observable = fractional_integral_spectral(flux, H, outer_scale=outer_scale)
+        observable = fractional_integral_spectral(
+            flux, H, outer_scale=outer_scale,
+            odd_axes=odd_tuple_1d if has_odd else None,
+        )
         del flux
     else:
         if kernel_construction_method_observable == 'LS2010':
             kernel2 = create_kernel_LS2010(size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
                                           causal=causal, outer_scale=outer_scale,
                                           outer_scale_width_factor=outer_scale_width_factor,
-                                          final_power=None)
+                                          final_power=None,
+                                          odd_axes=odd_tuple_1d if has_odd else None)
         elif kernel_construction_method_observable == 'naive':
+            if has_odd:
+                raise ValueError(
+                    "observable_kernel_odd_axes is not supported with "
+                    "kernel_construction_method_observable='naive'. Use "
+                    "'spectral' or 'LS2010'."
+                )
             kernel2 = create_kernel_naive(size, obs_kernel_exponent, causal=causal, outer_scale=outer_scale,
                                          outer_scale_width_factor=outer_scale_width_factor)
-        elif kernel_construction_method_observable == 'spectral_odd':
-            if causal:
-                raise ValueError("Spectral odd observable kernels do not support causal mode. "
-                                 "Use kernel_construction_method_observable='LS2010' with causal=True.")
-            kernel2 = create_kernel_spectral_odd(size, obs_kernel_exponent, causal=False, outer_scale=outer_scale,
-                                                 outer_scale_width_factor=outer_scale_width_factor)
         else:
             raise ValueError(f"Unknown kernel_construction_method_observable: {kernel_construction_method_observable}")
 
-        kernel2_is_fourier = kernel_construction_method_observable == 'spectral_odd'
-        observable = periodic_convolve(flux, kernel2, kernel_is_fourier=kernel2_is_fourier)
+        observable = periodic_convolve(flux, kernel2)
         del flux, kernel2
 
     if not periodic:
@@ -489,7 +550,7 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         observable = B.concatenate([observable, observable[-1:]])
         # Normalize to zero mean (increments should have zero mean)
         observable = observable - B.mean(observable)
-    elif kernel_construction_method_observable == 'spectral_odd':
+    elif has_odd:
         # Odd kernel produces zero-mean output (antisymmetric kernel sums to zero).
         # Normalize to zero mean and unit variance instead of unit mean.
         observable = observable - B.mean(observable)
@@ -502,7 +563,8 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
 
 def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_width_factor=2.0,
            kernel_construction_method_flux='LS2010', kernel_construction_method_observable='spectral',
-           periodic=False, scale_metric=None, scale_metric_dim=None):
+           periodic=False, scale_metric=None, scale_metric_dim=None, causal=False,
+           observable_kernel_odd_axes=None):
     """
     Generate an N-D Fractionally Integrated Flux (FIF) multifractal simulation.
 
@@ -568,6 +630,24 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         If None (default), uses the spatial dimension (inferred from size tuple length).
         **Use case**: In Generalized Scale Invariance (GSI), the scaling dimension
         may be non-integer and different from the embedding space dimension.
+    causal : bool or tuple of bool, optional
+        Make the FIF kernels causal along the specified axes. ``False`` (default)
+        gives the fully acausal field. ``True`` makes every axis causal; a
+        tuple of bool specifies per-axis. Causality zeros the half of the
+        kernel where the axis coordinate is negative. Variance compensation
+        scales as ``2^k`` for ``k`` causal axes (the log-flux is multiplied
+        by ``(2^k · C1)^(1/α)``). Causality is applied to both flux and
+        observable kernels for consistency. Not supported with
+        ``kernel_construction_method_observable='spectral'``.
+    observable_kernel_odd_axes : bool or tuple of bool, optional
+        Make the observable kernel antisymmetric (sign-flipped on the
+        negative half) along the specified axes — the kernel is multiplied
+        by ``Π_{j in odd_axes} sign(x_j)``. ``True`` applies to all axes; a
+        tuple of bool specifies per-axis. Yields a zero-mean process by
+        construction; output is normalized to zero mean and unit standard
+        deviation rather than unit mean. Supported with the ``'spectral'`` and
+        ``'LS2010'`` observable methods. The same axis cannot be both causal
+        and odd. Flux kernels cannot be made odd.
 
     Returns
     -------
@@ -584,6 +664,10 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         If provided levy_noise doesn't match specified size
     ValueError
         If alpha < 0.5 or alpha == 1 (not implemented)
+    ValueError
+        If ``causal`` and ``observable_kernel_odd_axes`` are both set on
+        the same axis, or if either is given a tuple whose length does not
+        match ``size``.
 
     Examples
     --------
@@ -619,13 +703,15 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     - Computational complexity is O(N log N) due to FFT-based convolutions
     - Large C1 values (> 0.5) can produce extreme values requiring careful handling
     - alpha < 0.5 and alpha = 1 are not currently implemented
-    - N-D kernels are always non-causal
+    - Causality is opt-in (``causal`` parameter); the default is fully acausal.
+      Causality is applied to both flux and observable kernels.
     - Spectral N-D kernels currently assume the default isotropic Fourier metric and
-      do not support custom `scale_metric`
+      do not support custom `scale_metric`. They also do not support ``causal``.
     - The ``'LS2010'`` observable path does not support negative H values;
       for negative H, use ``kernel_construction_method_observable='spectral'``
       (the default) which handles any real H.
     - C1 = 0: Routes internally to fBm_ND_circulant() for monofractal case
+      (causal is not supported with C1=0 because fBm cannot be causal).
     """
     # Handle size parameter and infer dimension
     if not isinstance(size, tuple):
@@ -671,10 +757,33 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     else:
         scale_metric_dim = float(scale_metric_dim)
 
+    # Normalize causal / observable_kernel_odd_axes to length-ndim tuples and
+    # validate that no axis is both.
+    causal_tuple = _normalize_axis_flag(causal, ndim, 'causal')
+    odd_tuple = _normalize_axis_flag(observable_kernel_odd_axes, ndim,
+                                     'observable_kernel_odd_axes')
+    for ax in range(ndim):
+        if causal_tuple[ax] and odd_tuple[ax]:
+            raise ValueError(
+                f"Axis {ax} cannot be both causal and odd; causality zeros "
+                "the negative-coordinate half, leaving no antisymmetric "
+                "structure for the odd sign-flip to act on."
+            )
+    n_causal_axes = sum(causal_tuple)
+    has_causal = n_causal_axes > 0
+    has_odd = any(odd_tuple)
+
     # C1==0 shortcut: use fBm (no intermittency)
     if C1 == 0:
         if levy_noise is not None:
             raise ValueError('levy_noise argument not supported for C1=0 (fBm shortcut)')
+        if has_causal:
+            raise ValueError("C1=0 requires causal=False (fBm cannot be causal)")
+        if has_odd:
+            raise ValueError(
+                "observable_kernel_odd_axes is not supported with C1=0 "
+                "(fBm path has no observable kernel)."
+            )
         return B.to_numpy(fBm_ND_circulant(output_size, H, periodic=periodic_tuple))
 
     if outer_scale is None:
@@ -734,7 +843,7 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
 
     if kernel_construction_method_flux == 'LS2010':
         kernel1 = create_kernel_LS2010(sim_size, flux_exponent, flux_norm_ratio_exp,
-                                      causal=False, outer_scale=outer_scale,
+                                      causal=causal_tuple, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=flux_final_power, scale_metric=scale_metric)
     else:
@@ -745,13 +854,21 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     integrated = periodic_convolve_nd(noise, kernel1)
     del noise, kernel1
 
-    # Scale and exponentiate to get flux
-    scaled = integrated * (C1 ** (1/alpha))
+    # Causality compensates variance: with k causal axes the kernel keeps a
+    # fraction 1/2^k of its mass, so the log-flux variance drops by 1/2^k.
+    # Scale up by 2^k inside the C1 factor to restore the target variance.
+    causality_factor = 2.0 ** n_causal_axes
+    scaled = integrated * ((causality_factor * C1) ** (1/alpha))
     del integrated
     flux = _clip_and_exp_flux(scaled, "FIF_ND")
     del scaled
 
     if H == 0:
+        if has_odd:
+            raise ValueError(
+                "observable_kernel_odd_axes is not meaningful with H=0 "
+                "(the H=0 path skips the observable kernel entirely)."
+            )
         output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
         flux = flux[output_slices]
         return B.to_numpy(flux / B.mean(flux))
@@ -765,20 +882,36 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         if scale_metric is not None:
             raise ValueError("Spectral observable kernels do not support custom scale_metric. "
                              "Use kernel_construction_method_observable='LS2010' with scale_metric.")
-        observable = fractional_integral_spectral(flux, H, outer_scale=outer_scale)
+        if has_causal:
+            raise ValueError(
+                "Spectral observable kernels do not support causal mode. "
+                "Use kernel_construction_method_observable='LS2010' with causal=True."
+            )
+        observable = fractional_integral_spectral(
+            flux, H, outer_scale=outer_scale,
+            odd_axes=odd_tuple if has_odd else None,
+        )
         del flux
     elif kernel_construction_method_observable == 'LS2010':
         kernel2 = create_kernel_LS2010(sim_size, obs_kernel_exponent, obs_kernel_norm_ratio_exp,
-                                      causal=False, outer_scale=outer_scale,
+                                      causal=causal_tuple, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
-                                      final_power=None, scale_metric=scale_metric)
+                                      final_power=None, scale_metric=scale_metric,
+                                      odd_axes=odd_tuple if has_odd else None)
         observable = periodic_convolve_nd(flux, kernel2)
         del flux, kernel2
     else:
         raise ValueError(f"Unknown kernel_construction_method_observable for N-D: {kernel_construction_method_observable}")
 
-    # Extract output based on per-axis periodicity, then normalize by mean of returned portion
+    # Extract output based on per-axis periodicity, then normalize. Odd
+    # output is zero-mean by construction (kernel is antisymmetric in at
+    # least one axis), so unit-mean normalization is undefined — use
+    # zero-mean / unit-std instead.
     output_slices = tuple(slice(None) if periodic_tuple[i] else slice(output_size[i]) for i in range(ndim))
     observable = observable[output_slices]
-    observable = observable / B.mean(observable)
+    if has_odd:
+        observable = observable - B.mean(observable)
+        observable = observable / B.std(observable)
+    else:
+        observable = observable / B.mean(observable)
     return B.to_numpy(observable)

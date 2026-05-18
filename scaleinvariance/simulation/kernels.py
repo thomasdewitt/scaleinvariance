@@ -1,6 +1,30 @@
 from .. import backend as B
 
 
+def _normalize_axis_flag(flag, ndim, name):
+    """Normalize a bool|tuple[bool]|None flag to a length-``ndim`` tuple of bools.
+
+    Used for ``causal`` and ``odd_axes`` parameters that may be specified
+    globally (``True``/``False``) or per-axis (``tuple[bool]``). ``None`` is
+    treated as all-False.
+    """
+    if flag is None:
+        return tuple(False for _ in range(ndim))
+    if isinstance(flag, bool):
+        return tuple(flag for _ in range(ndim))
+    if isinstance(flag, tuple):
+        if len(flag) != ndim:
+            raise ValueError(
+                f"{name} tuple length ({len(flag)}) must match ndim ({ndim})."
+            )
+        if not all(isinstance(x, bool) for x in flag):
+            raise ValueError(f"All elements of {name} tuple must be bool.")
+        return flag
+    raise ValueError(
+        f"{name} must be bool, tuple[bool], or None; got {type(flag).__name__}."
+    )
+
+
 def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
     """
     Apply outer scale cutoff using a Hanning window transition.
@@ -121,7 +145,8 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     return corrected_kernel
 
 def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, outer_scale=None,
-                         outer_scale_width_factor=2.0, final_power=None, scale_metric=None):
+                         outer_scale_width_factor=2.0, final_power=None, scale_metric=None,
+                         odd_axes=None):
     """
     Create kernel using Lovejoy & Schertzer 2010 finite-size corrections.
 
@@ -142,8 +167,12 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     norm_ratio_exponent : float
         Exponent for ratio in normalization factor
         Examples: -1/α for 1D flux, -d/α for d-D flux, -H for H kernels
-    causal : bool, optional
-        Whether to make kernel causal (1D only). Default False.
+    causal : bool or tuple of bool, optional
+        Whether to make kernel causal. Default False.
+        - bool: applied uniformly to all axes (all causal or all acausal)
+        - tuple of bool: per-axis causality, length must match the number of
+          spatial dimensions. ``True`` along an axis zeros out the half of
+          the kernel where that axis coordinate is negative.
     outer_scale : int, optional
         Large-scale cutoff. If None, no outer scale cutoff is applied.
     outer_scale_width_factor : float, optional
@@ -156,6 +185,14 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         If None (default), standard Euclidean distance is computed with dx=2 spacing.
         **Shape requirement**: Must match the kernel size (same shape as size parameter).
         **Note**: Only applicable for N-D case; ignored for 1D.
+    odd_axes : bool or tuple of bool, optional
+        Multiply the kernel by ``sign(x_j)`` along each axis ``j`` marked True.
+        ``None`` (default) or all-False yields the standard even kernel. With
+        any axis set True, the kernel is antisymmetric in that axis and
+        therefore zero-mean. With ``k`` axes set True, the per-quadrant sign
+        pattern is ``Π_{j in odd_axes} sign(x_j)``. The same axis must not be
+        marked both ``causal`` and ``odd`` — causality zeros one half-plane
+        which leaves no negative-coordinate side to sign-flip.
 
     Returns
     -------
@@ -164,47 +201,77 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
     """
     # Handle 1D vs N-D
     if isinstance(size, int):
-        # 1D case
-        position_range = B.arange(-(size - 1), size, 2)
-        distance = B.abs(position_range)
-        kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
-
-        # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
-        if outer_scale is not None:
-            kernel = _apply_outer_scale(kernel, distance / 2, outer_scale, outer_scale_width_factor)
-
-        # Apply causality
-        if causal:
-            kernel[:size//2] = 0
-
+        ndim = 1
+        shape = (size,)
     else:
-        # N-D case
-        if scale_metric is None:
-            coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in size]
+        ndim = len(size)
+        shape = tuple(size)
 
-            # Build |r|^2 via broadcasted 1D axes to avoid full-size meshgrids.
-            ndim = len(size)
+    causal_tuple = _normalize_axis_flag(causal, ndim, 'causal')
+    odd_tuple = _normalize_axis_flag(odd_axes, ndim, 'odd_axes')
+
+    # An axis cannot be simultaneously causal AND odd: causal zeros one
+    # half-plane, leaving the other half to be sign-flipped by *itself*,
+    # which is a no-op times the survivor. Mathematically ill-posed → raise.
+    for ax in range(ndim):
+        if causal_tuple[ax] and odd_tuple[ax]:
+            raise ValueError(
+                f"Axis {ax} cannot be both causal and odd; the causal "
+                "mask zeros the negative-coordinate half, leaving no "
+                "antisymmetric structure for the odd sign-flip to act on."
+            )
+
+    # Coordinate arrays per axis (always built, since odd/causal masks need
+    # them even when the user supplies a custom scale_metric).
+    coord_arrays = [B.arange(-(dim - 1), dim, 2) for dim in shape]
+
+    # Build distance / scale metric.
+    if scale_metric is None:
+        if ndim == 1:
+            distance = B.abs(coord_arrays[0])
+        else:
+            # |r|^2 via broadcasted 1D axes (no full meshgrid).
             dist_sq = None
             for axis_idx, axis in enumerate(coord_arrays):
                 broadcast_shape = [1] * ndim
                 broadcast_shape[axis_idx] = axis.shape[0]
                 term = axis.reshape(broadcast_shape) ** 2
-                if dist_sq is None:
-                    dist_sq = term
-                else:
-                    dist_sq = dist_sq + term
+                dist_sq = term if dist_sq is None else dist_sq + term
                 del term
             distance = B.sqrt(dist_sq)
             del dist_sq
-        else:
-            # Use provided scale metric
-            distance = scale_metric
+    else:
+        if ndim == 1:
+            raise ValueError("scale_metric is not supported for 1D kernels.")
+        distance = scale_metric
 
-        kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
+    kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
-        # Apply outer scale cutoff with Hanning window (convert distance to units of dx=1)
-        if outer_scale is not None:
-            kernel = _apply_outer_scale(kernel, distance / 2, outer_scale, outer_scale_width_factor)
+    # Outer scale cutoff with Hanning window (convert distance to units of dx=1).
+    if outer_scale is not None:
+        kernel = _apply_outer_scale(kernel, distance / 2, outer_scale, outer_scale_width_factor)
+
+    # Per-axis causal masking: zero out coord_j < 0.
+    # Coordinates are arange(-(dim-1), dim, 2) → never zero, so sign(coord) ∈ {-1, +1}
+    # and (sign + 1)/2 is the indicator of the positive half (∈ {0, 1}).
+    for axis_idx, is_causal in enumerate(causal_tuple):
+        if not is_causal:
+            continue
+        coord = coord_arrays[axis_idx]
+        mask_1d = (B.sign(coord) + 1) / 2
+        broadcast_shape = [1] * ndim
+        broadcast_shape[axis_idx] = coord.shape[0]
+        kernel = kernel * mask_1d.reshape(broadcast_shape)
+
+    # Per-axis odd sign-flip: multiply by sign(coord_j).
+    for axis_idx, is_odd in enumerate(odd_tuple):
+        if not is_odd:
+            continue
+        coord = coord_arrays[axis_idx]
+        sign_1d = B.sign(coord)
+        broadcast_shape = [1] * ndim
+        broadcast_shape[axis_idx] = coord.shape[0]
+        kernel = kernel * sign_1d.reshape(broadcast_shape)
 
     return kernel
 
