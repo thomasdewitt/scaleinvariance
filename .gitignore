@@ -112,6 +112,9 @@ dmypy.json
 .vscode/
 .idea/
 
+# Claude Code project memory
+.claude/
+
 # macOS
 .DS_Store
 
