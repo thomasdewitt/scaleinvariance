@@ -20,9 +20,9 @@ import scaleinvariance
 # ---- Configuration ----
 KERNEL_METHOD_FLUX = 'LS2010'
 KERNEL_METHOD_OBS  = 'spectral'
-FIT_MIN        = 10
-FIT_MAX        = 10000
-SIM_SIZE       = 2**16
+FIT_MIN        = 1000
+FIT_MAX        = 100000
+SIM_SIZE       = 2**22
 N_SIMS         = 20
 SCALING_METHOD = 'haar_fluctuation'   # 'structure_function' or 'haar_fluctuation'
 
@@ -84,7 +84,7 @@ ax.set_xlabel('q')
 ax.set_ylabel('K(q)')
 ax.set_title(
     f'K(q) estimation:  H={H}, C₁={C1}, α={alpha}\n'
-    f'{N_SIMS} sims × {SIM_SIZE:,} pts, fit=[{FIT_MIN},{FIT_MAX}], kernel={KERNEL_METHOD}'
+    f'{N_SIMS} sims × {SIM_SIZE:,} pts, fit=[{FIT_MIN},{FIT_MAX}], kernel_obs={KERNEL_METHOD_OBS}, kernel_flux={KERNEL_METHOD_FLUX}'
 )
 ax.legend()
 ax.grid(True, alpha=0.3)
