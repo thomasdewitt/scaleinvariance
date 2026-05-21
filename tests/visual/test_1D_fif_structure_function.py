@@ -5,12 +5,14 @@ FIF Structure Function Analysis Test Script
 Tests FIF_1D simulation from scaleinvariance package and compares structure functions
 against theoretical expectations including multifractal scaling corrections.
 
-Usage: python test_1D_fif_structure_function.py [H] [C1] [alpha] [causal] [--save-dir DIR]
+Usage: python test_1D_fif_structure_function.py [H] [C1] [alpha] [causal] [options]
 Examples:
   python test_1D_fif_structure_function.py 0.7
   python test_1D_fif_structure_function.py 0.7 0.08 1.8
   python test_1D_fif_structure_function.py 0.5 0.1 1.6 True
   python test_1D_fif_structure_function.py 0.7 0.15 1.8 False --save-dir /tmp/plots
+  python test_1D_fif_structure_function.py 0.3 0.1 1.8 --q 3 --include-naive
+  python test_1D_fif_structure_function.py 0.3 0.1 1.8 --size 1048576 --n-sims 20
 """
 
 import sys
@@ -20,6 +22,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scaleinvariance
 
+scaleinvariance.set_backend('torch')
+scaleinvariance.set_device('cuda')
+scaleinvariance.set_numerical_precision('float64')
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='FIF Structure Function Analysis Test')
@@ -28,6 +34,14 @@ def parse_args():
     parser.add_argument('alpha', nargs='?', type=float, default=1.8, help='Alpha parameter (default: 1.8)')
     parser.add_argument('causal', nargs='?', type=str, default='False', help='Causal (default: False)')
     parser.add_argument('--save-dir', type=str, default=None, help='Directory to save plots (default: show)')
+    parser.add_argument('-q', '--q', dest='q', type=float, default=2.0,
+                        help='Order q of the structure function (default: 2)')
+    parser.add_argument('--include-naive', action='store_true',
+                        help='Include the naive-kernel FIF comparison (default: off)')
+    parser.add_argument('--n-sims', type=int, default=10,
+                        help='Number of simulations to average per kernel variant (default: 10)')
+    parser.add_argument('--size', type=int, default=2**20,
+                        help='Length of each 1D simulation (default: 2**20 = 1048576)')
     return parser.parse_args()
 
 
@@ -38,6 +52,10 @@ def main():
     alpha = args.alpha
     causal = args.causal.lower() in ['true', '1', 'yes', 't']
     save_dir = args.save_dir
+    q = args.q
+    include_naive = args.include_naive
+    n_sims = args.n_sims
+    size = args.size
 
     if save_dir is not None:
         os.makedirs(save_dir, exist_ok=True)
@@ -46,9 +64,6 @@ def main():
     print("FIF STRUCTURE FUNCTION ANALYSIS TEST")
     print("=" * 50)
 
-    # Parameters
-    size = 2**20
-    n_sims = 10    # Number of simulations for averaging
     outer_scale = size
 
     print(f"\nParameters:")
@@ -57,7 +72,9 @@ def main():
     print(f"  Alpha: {alpha}")
     print(f"  C1: {C1}")
     print(f"  Causal: {causal}")
+    print(f"  Structure function order q: {q}")
     print(f"  Number of simulations: {n_sims}")
+    print(f"  Include naive comparison: {include_naive}")
 
     # Generate corrected FIF simulations
     print(f"\nGenerating {n_sims} corrected FIF simulations...")
@@ -76,26 +93,27 @@ def main():
     # Concatenate all simulations and analyze with structure_function_analysis
     all_fif_data = np.vstack(all_fif_data)
     lags, mean_fif_sf = scaleinvariance.structure_function(
-        all_fif_data, order=2, axis=1)
+        all_fif_data, order=q, axis=1)
 
-    # Generate uncorrected FIF simulations for comparison
-    print(f"\nGenerating {n_sims} uncorrected FIF simulations...")
-    all_fif_uncorrected_data = []
+    # Optionally generate uncorrected (naive-kernel) FIF simulations for comparison
+    if include_naive:
+        print(f"\nGenerating {n_sims} uncorrected FIF simulations...")
+        all_fif_uncorrected_data = []
 
-    for i in range(n_sims):
-        if i%2 == 0: print(f"  Uncorrected simulation {i+1}/{n_sims}...",)
+        for i in range(n_sims):
+            if i%2 == 0: print(f"  Uncorrected simulation {i+1}/{n_sims}...",)
 
-        # Generate uncorrected FIF simulation
-        fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
-                                                      kernel_construction_method_flux='naive',
-                                                      kernel_construction_method_observable='naive',
-                                                      outer_scale=outer_scale)
-        all_fif_uncorrected_data.append(fif_field_uncorrected)
+            # Generate uncorrected FIF simulation
+            fif_field_uncorrected = scaleinvariance.FIF_1D(size, alpha, C1, H=H, causal=causal,
+                                                          kernel_construction_method_flux='naive',
+                                                          kernel_construction_method_observable='naive',
+                                                          outer_scale=outer_scale)
+            all_fif_uncorrected_data.append(fif_field_uncorrected)
 
-    # Concatenate uncorrected simulations and analyze
-    all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
-    lags_uncorrected, mean_fif_uncorrected_sf = scaleinvariance.structure_function(
-        all_fif_uncorrected_data, order=2, axis=1)
+        # Concatenate uncorrected simulations and analyze
+        all_fif_uncorrected_data = np.vstack(all_fif_uncorrected_data)
+        lags_uncorrected, mean_fif_uncorrected_sf = scaleinvariance.structure_function(
+            all_fif_uncorrected_data, order=q, axis=1)
 
     # Generate spectral_odd FIF simulations (non-causal only, H != 0 only)
     has_odd = not causal and H != 0
@@ -111,7 +129,7 @@ def main():
             all_fif_odd_data.append(fif_field_odd)
         all_fif_odd_data = np.vstack(all_fif_odd_data)
         lags_odd, mean_fif_odd_sf = scaleinvariance.structure_function(
-            all_fif_odd_data, order=2, axis=1)
+            all_fif_odd_data, order=q, axis=1)
 
     # Generate spectral (even) FIF simulations for comparison (non-causal only, H != 0 only)
     has_spectral = not causal and H != 0
@@ -127,12 +145,12 @@ def main():
             all_fif_spectral_data.append(fif_field_spectral)
         all_fif_spectral_data = np.vstack(all_fif_spectral_data)
         lags_spectral, mean_fif_spectral_sf = scaleinvariance.structure_function(
-            all_fif_spectral_data, order=2, axis=1)
+            all_fif_spectral_data, order=q, axis=1)
 
 
-    # Theoretical expectations
-    theoretical_K2 = C1 * (2**alpha - 2) / (alpha - 1)  # K(q=2)
-    theoretical_zeta_fif = 2*H - theoretical_K2
+    # Theoretical expectations: zeta(q) = q*H - K(q)
+    theoretical_Kq = scaleinvariance.K_analytic(q, C1, alpha)
+    theoretical_zeta_fif = q*H - theoretical_Kq
 
 
     plt.figure(figsize=(10, 8))
@@ -143,8 +161,9 @@ def main():
     # Plot raw averaged structure functions
     plt.loglog(lags, mean_fif_sf, 'b-', linewidth=2,
               label='FIF LS2010')
-    plt.loglog(lags_uncorrected, mean_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
-              label='FIF naive')
+    if include_naive:
+        plt.loglog(lags_uncorrected, mean_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
+                  label='FIF naive')
     if has_spectral:
         plt.loglog(lags_spectral, mean_fif_spectral_sf, '#2ca02c', linewidth=2,
                   label='FIF spectral')
@@ -161,18 +180,18 @@ def main():
     ref_lag_fif = lags[len(lags)//4]
     theoretical_line_fif = ref_sf_fif * (ref_lags/ref_lag_fif)**(theoretical_zeta_fif)
     plt.loglog(ref_lags, theoretical_line_fif, 'k--', linewidth=2,
-              label=f'FIF theory (\u03b6\u2082={theoretical_zeta_fif:.2f})')
+              label=f'FIF theory (\u03b6(q={q:g})=qH-K(q)={theoretical_zeta_fif:.2f})')
 
-    # fBm (non-intermittent) theoretical line
-    theoretical_zeta_fbm = 2 * H
+    # fBm (non-intermittent) theoretical line: zeta(q) = q*H (K=0)
+    theoretical_zeta_fbm = q * H
     theoretical_line_fbm = ref_sf_fif * (ref_lags/ref_lag_fif)**(theoretical_zeta_fbm)
     plt.loglog(ref_lags, theoretical_line_fbm, 'k:', linewidth=0.5,
-              label=f'Equivalent nonintermittent SF (\u03b6\u2082={theoretical_zeta_fbm:.2f})')
+              label=f'Equivalent nonintermittent SF (\u03b6(q={q:g})=qH={theoretical_zeta_fbm:.2f})')
 
     plt.xlabel('Lag')
-    plt.ylabel('Structure Function S\u2082(r)')
+    plt.ylabel(f'Structure Function S(q={q:g}, r)')
     causal_str = "causal" if causal else "acausal"
-    plt.title(f'FIF Raw Structure Function Analysis (H={H}, \u03b1={alpha}, C\u2081={C1}, {causal_str})')
+    plt.title(f'FIF Raw Structure Function Analysis (H={H}, \u03b1={alpha}, C\u2081={C1}, q={q:g}, {causal_str})')
     plt.legend(fontsize=8)
     plt.grid(True, alpha=0.3, which='both')
 
@@ -186,11 +205,9 @@ def main():
     mid_idx = len(lags) // 2
     mid_lag = lags[mid_idx]
     mid_sf_corrected = mean_fif_sf[mid_idx]
-    mid_sf_uncorrected = mean_fif_uncorrected_sf[mid_idx]
 
     # Normalize FIF structure functions by their theoretical slope AND middle lag power
     normalized_fif_sf = (mean_fif_sf / (lags**(theoretical_zeta_fif))) / (mid_sf_corrected / (mid_lag**(theoretical_zeta_fif)))
-    normalized_fif_uncorrected_sf = (mean_fif_uncorrected_sf / (lags_uncorrected**(theoretical_zeta_fif))) / (mid_sf_uncorrected / (mid_lag**(theoretical_zeta_fif)))
 
     # Also normalize a theoretical fBm structure function for comparison
     theoretical_line_fbm_full = ref_sf_fif * (lags/ref_lag_fif)**(theoretical_zeta_fbm)
@@ -198,8 +215,12 @@ def main():
 
     plt.loglog(lags, normalized_fif_sf, 'b-', linewidth=2,
               label='FIF LS2010 normalized')
-    plt.loglog(lags_uncorrected, normalized_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
-              label='FIF naive normalized')
+
+    if include_naive:
+        mid_sf_uncorrected = mean_fif_uncorrected_sf[mid_idx]
+        normalized_fif_uncorrected_sf = (mean_fif_uncorrected_sf / (lags_uncorrected**(theoretical_zeta_fif))) / (mid_sf_uncorrected / (mid_lag**(theoretical_zeta_fif)))
+        plt.loglog(lags_uncorrected, normalized_fif_uncorrected_sf, '#ff7f0e', linewidth=2,
+                  label='FIF naive normalized')
 
     if has_spectral:
         mid_sf_spectral = mean_fif_spectral_sf[mid_idx]
@@ -223,7 +244,7 @@ def main():
 
 
     plt.xlabel('Lag')
-    plt.ylabel('S\u2082(r) / r^\u03b6\u2082 (normalized)')
+    plt.ylabel(f'S(q={q:g}, r) / r^\u03b6(q) (normalized)')
     plt.title('Multifractal-Normalized Structure Functions (flat = perfect agreement with theory)')
     plt.legend(fontsize=8)
     plt.grid(True, alpha=0.3, which='both')
@@ -237,7 +258,7 @@ def main():
     plt.tight_layout()
 
     if save_dir is not None:
-        filename = f'structure_function_H{H}_C1{C1}_alpha{alpha}_{causal_str}.png'
+        filename = f'structure_function_q{q:g}_H{H}_C1{C1}_alpha{alpha}_{causal_str}.png'
         filepath = os.path.join(save_dir, filename)
         plt.savefig(filepath, dpi=150, bbox_inches='tight')
         print(f"\nSaved: {filepath}")
