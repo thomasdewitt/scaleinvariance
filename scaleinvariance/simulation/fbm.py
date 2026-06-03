@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from .. import backend as B
 from .fractional_integration import fractional_integral_spectral
 
@@ -220,11 +221,17 @@ def fBm_1D(size, H, causal=False, outer_scale=None, outer_scale_width_factor=2.0
         Use causal kernels (future doesn't affect past). Default False.
         When False, the fast spectral fractional-integral path is used and
         ``kernel_construction_method`` is ignored.
-    outer_scale : int, optional
-        Large-scale cutoff. Defaults to size.
+    outer_scale : int or None, optional
+        Large-scale cutoff. If None (default), no outer-scale cutoff is
+        applied: the causal real-space kernels skip the Hanning window and
+        the non-causal spectral path imposes no low-frequency cutoff beyond
+        unavoidable DC handling. If set, a Hanning-window cutoff centered at
+        this scale is applied to the causal kernels, and it sets the
+        low-frequency regularization (min_freq = 1/outer_scale) on the
+        spectral path.
     outer_scale_width_factor : float, optional
         Controls transition width for outer scale (causal path only).
-        Default is 2.0.
+        Default is 2.0. Has no effect when outer_scale is None.
     periodic : bool, optional
         If True (default), returns full periodic simulation. If False,
         doubles the simulation size internally then returns the first half
@@ -276,8 +283,13 @@ def fBm_1D(size, H, causal=False, outer_scale=None, outer_scale_width_factor=2.0
     if not periodic:
         size *= 2  # Double size to eliminate periodicity artifacts
 
-    if outer_scale is None:
-        outer_scale = output_size
+    if outer_scale is None and outer_scale_width_factor != 2.0:
+        warnings.warn(
+            "outer_scale_width_factor has no effect when outer_scale is None "
+            "(no outer-scale cutoff is applied).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # Generate or use provided Gaussian white noise
     if gaussian_noise is None:

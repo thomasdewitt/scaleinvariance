@@ -281,11 +281,17 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     causal : bool, optional
         Use causal kernels (future doesn't affect past). Default False.
         False gives symmetric (non-causal) kernels.
-    outer_scale : int, optional
-        Large-scale cutoff. Defaults to size.
+    outer_scale : int or None, optional
+        Large-scale cutoff. If None (default), no outer-scale cutoff is
+        applied: the real-space kernels skip the Hanning window and the
+        spectral path imposes no low-frequency cutoff beyond unavoidable
+        DC handling. The LS2010 kernel's intrinsic finite-size correction
+        still acts. If set, a Hanning-window cutoff centered at this scale
+        is applied to the real-space kernels, and it sets the low-frequency
+        regularization (min_freq = 1/outer_scale) on the spectral path.
     outer_scale_width_factor : float, optional
         Controls transition width for outer scale. Transition width = outer_scale * width_factor.
-        Default is 2.0.
+        Default is 2.0. Has no effect when outer_scale is None.
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
@@ -489,8 +495,13 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
             noise = B.concatenate([levy_noise_arr, _extremal_levy_core(alpha, size=output_size)])
         else:
             noise = levy_noise_arr
-    if outer_scale is None:
-        outer_scale = output_size
+    if outer_scale is None and outer_scale_width_factor != 2.0:
+        warnings.warn(
+            "outer_scale_width_factor has no effect when outer_scale is None "
+            "(no outer-scale cutoff is applied).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # Create flux kernel (kernel 1)
     # Calculate exponent and normalization parameters for flux kernel
@@ -652,11 +663,17 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         must lie in ``[0, 1]`` — negative H is not supported on that path.
     levy_noise : ndarray, optional
         Pre-generated N-D Lévy noise for reproducibility. Must have same shape as simulation.
-    outer_scale : int, optional
-        Large-scale cutoff. Defaults to max(dimensions).
+    outer_scale : int or None, optional
+        Large-scale cutoff. If None (default), no outer-scale cutoff is
+        applied: the real-space kernels skip the Hanning window and the
+        spectral path imposes no low-frequency cutoff beyond unavoidable
+        DC handling. The LS2010 kernel's intrinsic finite-size correction
+        still acts. If set, a Hanning-window cutoff centered at this scale
+        is applied to the real-space kernels, and it sets the low-frequency
+        regularization (min_freq = 1/outer_scale) on the spectral path.
     outer_scale_width_factor : float, optional
         Controls transition width for outer scale. Transition width = outer_scale * width_factor.
-        Default is 2.0.
+        Default is 2.0. Has no effect when outer_scale is None.
     kernel_construction_method_flux : str, optional
         Method for constructing flux (cascade) kernel. Options:
         - 'LS2010': Lovejoy & Schertzer 2010 finite-size corrections (default)
@@ -902,8 +919,13 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
             )
         return B.to_numpy(fBm_ND_circulant(output_size, H, periodic=periodic_tuple))
 
-    if outer_scale is None:
-        outer_scale = max(sim_size)
+    if outer_scale is None and outer_scale_width_factor != 2.0:
+        warnings.warn(
+            "outer_scale_width_factor has no effect when outer_scale is None "
+            "(no outer-scale cutoff is applied).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     if any(s % 2 != 0 for s in sim_size):
         raise ValueError("All dimensions must be even numbers; powers of 2 are recommended.")

@@ -242,7 +242,10 @@ scaleinvariance.FIF_1D(
                                # H in [-1, 1] (H<0 via diff).
     levy_noise=None,           # Pre-generated noise for reproducibility
     causal=False,              # Use causal kernels (must be False for C1=0)
-    outer_scale=None,          # Large-scale cutoff (default: size)
+    outer_scale=None,          # Large-scale cutoff. None (default) = no outer-scale
+                               # cutoff applied (real-space Hanning window skipped;
+                               # spectral path imposes no low-freq cutoff beyond DC).
+                               # Set a value to apply a cutoff at that scale.
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method_flux='LS2010',        # 'LS2010' or 'naive'
     kernel_construction_method_observable='spectral', # 'spectral', 'LS2010', 'naive'.
@@ -265,7 +268,10 @@ scaleinvariance.FIF_ND(
     H,                         # Hurst exponent. 'spectral' path: any real
                                # (with overflow guard). 'LS2010' path: H in [0, 1].
     levy_noise=None,           # Pre-generated noise for reproducibility
-    outer_scale=None,          # Large-scale cutoff (default: max(size))
+    outer_scale=None,          # Large-scale cutoff. None (default) = no outer-scale
+                               # cutoff applied (real-space Hanning window skipped;
+                               # spectral path imposes no low-freq cutoff beyond DC).
+                               # Set a value to apply a cutoff at that scale.
     outer_scale_width_factor=2.0,  # Transition width control
     kernel_construction_method_flux='LS2010',        # 'LS2010' only
     kernel_construction_method_observable='spectral', # 'spectral' or 'LS2010'
@@ -339,7 +345,10 @@ scaleinvariance.fBm_1D(
     size,                      # Length (must be even, power of 2 recommended)
     H,                         # Hurst exponent in (-0.5, 1.5)
     causal=True,               # Use causal kernels
-    outer_scale=None,          # Large-scale cutoff
+    outer_scale=None,          # Large-scale cutoff. None (default) = no outer-scale
+                               # cutoff applied (causal Hanning window skipped;
+                               # spectral path imposes no low-freq cutoff beyond DC).
+                               # Set a value to apply a cutoff at that scale.
     outer_scale_width_factor=2.0,
     periodic=True,             # Full periodic output; set False to double internally and crop
     gaussian_noise=None,       # Pre-generated noise
