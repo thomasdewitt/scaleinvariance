@@ -5,7 +5,8 @@ from .. import backend as B
 from ..utils import process_lags, estimate_hurst_from_scaling
 
 
-def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'):
+def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2',
+                       periodic=False):
     """
     Calculate the mean structure function for regularly spaced scalar data along a given axis.
 
@@ -22,7 +23,8 @@ def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'
         When an array is given, the absolute increments |u(x+r) - u(x)| are computed
         once per lag and reused across all orders (avoids redundant work).
     max_sep : int, optional
-        Maximum lag to compute. If None, defaults to (size along axis) - 1.
+        Maximum lag to compute. If None, defaults to (size along axis) - 1, or
+        (size along axis) // 2 when ``periodic=True``.
     axis : int, optional
         Axis along which to compute the structure function (default: 0).
     lags : str, list, or np.ndarray, optional
@@ -30,6 +32,12 @@ def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'
           - A list or array of lags.
           - 'all': all integer lags from 1 to max_sep.
           - 'powers of X': lags as integers of powers of X, where X is any number (e.g., 'powers of 2', 'powers of 1.2').
+    periodic : bool, optional
+        If True, treat the domain as periodic (toroidal) along ``axis``: the
+        increment at lag r uses all L pairs ``u((x + r) mod L) - u(x)`` rather
+        than dropping the L - r edge pairs. On a periodic domain S(r) = S(L - r)
+        exactly, so lags above L // 2 are redundant; ``max_sep`` is therefore
+        capped at L // 2 and an explicit ``max_sep > L // 2`` raises ValueError.
 
     Returns
     --------
@@ -55,8 +63,13 @@ def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'
 
     L = data.shape[axis]
     if max_sep is None:
-        max_sep = L - 1
+        max_sep = (L // 2) if periodic else (L - 1)
     else:
+        if periodic and max_sep > L // 2:
+            raise ValueError(
+                f"For periodic=True, max_sep must be <= L // 2 ({L // 2}) because "
+                f"S(r) = S(L - r) on a periodic domain; got max_sep={max_sep}."
+            )
         max_sep = min(max_sep, L - 1)
 
     # Process lag options
@@ -66,13 +79,17 @@ def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'
 
     # Compute structure function values for each lag along the specified axis
     for i, lag in enumerate(lags):
-        # Build slices for the given axis
-        slice1 = [slice(None)] * data.ndim
-        slice2 = [slice(None)] * data.ndim
-        slice1[axis] = slice(lag, None)
-        slice2[axis] = slice(None, -lag)
+        if periodic:
+            # Toroidal: all L pairs u((x + r) mod L) - u(x).
+            diff = B.abs(B.roll(data, -int(lag), axis=axis) - data)
+        else:
+            # Build slices for the given axis (drops the L - r edge pairs).
+            slice1 = [slice(None)] * data.ndim
+            slice2 = [slice(None)] * data.ndim
+            slice1[axis] = slice(lag, None)
+            slice2[axis] = slice(None, -lag)
 
-        diff = B.abs(data[tuple(slice1)] - data[tuple(slice2)])
+            diff = B.abs(data[tuple(slice1)] - data[tuple(slice2)])
 
         if (B.numel(diff) == 0) or B.all(B.isnan(diff)):
             sf_values[:, i] = np.nan
@@ -87,7 +104,7 @@ def structure_function(data, order=1, max_sep=None, axis=0, lags='powers of 1.2'
 
 
 def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
-                         axis=0, lags='powers of 1.2'):
+                         axis=0, lags='powers of 1.2', periodic=False):
     """
     Calculate the mixed (two-field, two-exponent) structure function.
 
@@ -116,6 +133,11 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
         Axis along which to compute increments (default: 0).
     lags : str, list, or np.ndarray, optional
         Lag selection (see `structure_function` for accepted forms).
+    periodic : bool, optional
+        If True, treat the domain as periodic (toroidal) along ``axis``: both
+        increments wrap around the array end (all L pairs per lag). ``max_sep``
+        is capped at L // 2 and an explicit ``max_sep > L // 2`` raises
+        ValueError (see `structure_function`).
 
     Returns
     --------
@@ -164,8 +186,13 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
 
     L = data1.shape[axis]
     if max_sep is None:
-        max_sep = L - 1
+        max_sep = (L // 2) if periodic else (L - 1)
     else:
+        if periodic and max_sep > L // 2:
+            raise ValueError(
+                f"For periodic=True, max_sep must be <= L // 2 ({L // 2}) because "
+                f"S(r) = S(L - r) on a periodic domain; got max_sep={max_sep}."
+            )
         max_sep = min(max_sep, L - 1)
 
     lags = process_lags(lags, max_sep, even_only=False)
@@ -173,15 +200,19 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
     cosf = np.empty((o1.size, o2.size, lags.size), dtype=np.float64)
 
     for i, lag in enumerate(lags):
-        slice1 = [slice(None)] * data1.ndim
-        slice2 = [slice(None)] * data1.ndim
-        slice1[axis] = slice(lag, None)
-        slice2[axis] = slice(None, -lag)
-        sl1 = tuple(slice1)
-        sl2 = tuple(slice2)
+        if periodic:
+            d1 = B.abs(B.roll(data1, -int(lag), axis=axis) - data1)
+            d2 = B.abs(B.roll(data2, -int(lag), axis=axis) - data2)
+        else:
+            slice1 = [slice(None)] * data1.ndim
+            slice2 = [slice(None)] * data1.ndim
+            slice1[axis] = slice(lag, None)
+            slice2[axis] = slice(None, -lag)
+            sl1 = tuple(slice1)
+            sl2 = tuple(slice2)
 
-        d1 = B.abs(data1[sl1] - data1[sl2])
-        d2 = B.abs(data2[sl1] - data2[sl2])
+            d1 = B.abs(data1[sl1] - data1[sl2])
+            d2 = B.abs(data2[sl1] - data2[sl2])
 
         if (B.numel(d1) == 0) or B.all(B.isnan(d1)) or B.all(B.isnan(d2)):
             cosf[:, :, i] = np.nan
@@ -203,7 +234,8 @@ def costructure_function(data1, data2, order1=1, order2=1, max_sep=None,
     return lags, cosf
 
 
-def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False):
+def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False,
+                             periodic=False):
     """
     Calculate the Hurst exponent using structure functions.
 
@@ -225,6 +257,9 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
         Axis along which to compute the structure function (default: 0).
     return_fit : bool, optional
         If True, return the lags, structure function values, and fitted line.
+    periodic : bool, optional
+        If True, use periodic (toroidal) increments along ``axis`` (see
+        `structure_function`). The default ``max_sep`` becomes array_size // 2.
 
     Returns
     --------
@@ -254,13 +289,11 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
 
     # Set default separations to isolate scaling range >> grid size and << domain size
     if max_sep is None:
+        max_sep = (array_size // 2) if periodic else (array_size - 1)
         if array_size <= 512:
-            max_sep = array_size - 1
             warnings.warn(f"Array size ({array_size}) is small. Using max_sep={max_sep}. "
                          "Consider using larger arrays for more reliable Hurst estimation.",
                          UserWarning)
-        else:
-            max_sep = array_size - 1
 
     if min_sep is None:
         if array_size <= 512:
@@ -270,7 +303,8 @@ def structure_function_hurst(data, min_sep=None, max_sep=None, axis=0, return_fi
 
     # Calculate structure function
     lags, sf_values = structure_function(data, order=1, max_sep=max_sep,
-                                                 axis=axis, lags='powers of 1.2')
+                                                 axis=axis, lags='powers of 1.2',
+                                                 periodic=periodic)
 
     # Use common Hurst estimation utility
     return estimate_hurst_from_scaling(lags, sf_values, min_sep, max_sep, return_fit)

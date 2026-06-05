@@ -9,6 +9,10 @@ def power_spectrum_binned(data, max_wavelength=None, min_wavelength=None, nbins=
     """
     Compute binned power spectral density for data along specified axis.
 
+    Note: this estimator is FFT-based and therefore inherently treats the
+    domain as periodic, so there is no ``periodic`` flag (unlike
+    ``structure_function`` / ``haar_fluctuation``).
+
     Parameters
     ----------
     data : array-like
@@ -91,6 +95,10 @@ def spectral_hurst(data, max_wavelength=None, min_wavelength=None, nbins=50, axi
 
     For fractional Brownian motion, PSD ~ f^(-β) with β = 2H + 1.
     This function estimates H by performing linear regression on log(PSD) vs log(frequency).
+
+    Note: this estimator is FFT-based and therefore inherently treats the
+    domain as periodic, so there is no ``periodic`` flag (unlike
+    ``structure_function_hurst`` / ``haar_fluctuation_hurst``).
 
     Parameters
     ----------

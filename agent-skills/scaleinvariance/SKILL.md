@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.11.0**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.12.0**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -112,7 +112,8 @@ scaleinvariance.structure_function_hurst(
     min_sep=None,       # Min lag for fit (default: 1 or 4 depending on size)
     max_sep=None,       # Max lag for fit (default: size/8 or size-1 if small)
     axis=0,             # Axis along which to compute
-    return_fit=False    # If True, also return lags, values, fit_line
+    return_fit=False,   # If True, also return lags, values, fit_line
+    periodic=False      # Periodic (toroidal) domain; default max_sep -> size//2
 ) -> (H, uncertainty) | (H, uncertainty, lags, sf_values, fit_line)
 ```
 
@@ -122,7 +123,8 @@ scaleinvariance.haar_fluctuation_hurst(
     min_sep=None,       # Min lag for fit
     max_sep=None,       # Max lag for fit
     axis=0,             # Axis along which to compute
-    return_fit=False    # If True, also return lags, values, fit_line
+    return_fit=False,   # If True, also return lags, values, fit_line
+    periodic=False      # Periodic (toroidal) domain; full lag range kept (no size//2 cap)
 ) -> (H, uncertainty) | (H, uncertainty, lags, haar_values, fit_line)
 ```
 
@@ -147,7 +149,8 @@ scaleinvariance.structure_function(
                              # returns shape (n_orders, n_lags).
     max_sep=None,            # Maximum lag to compute
     axis=0,                  # Axis along which to compute
-    lags='powers of 1.2'     # 'all', 'powers of X', or array of lags
+    lags='powers of 1.2',    # 'all', 'powers of X', or array of lags
+    periodic=False           # Periodic (toroidal) domain; see note below
 ) -> (lags, sf_values)
 # sf_values.shape: (n_lags,) for scalar order, (n_orders, n_lags) for array order
 ```
@@ -160,7 +163,8 @@ scaleinvariance.haar_fluctuation(
     max_sep=None,            # Maximum lag to compute
     axis=0,                  # Axis along which to compute
     lags='powers of 1.2',    # 'all', 'powers of X', or array of lags
-    nan_behavior='raise'     # 'raise' or 'ignore'
+    nan_behavior='raise',    # 'raise' or 'ignore'
+    periodic=False           # Periodic (toroidal) domain; see note below
 ) -> (lags, haar_values)
 # haar_values.shape: (n_lags,) for scalar order, (n_orders, n_lags) for array order
 ```
@@ -172,7 +176,8 @@ scaleinvariance.costructure_function(
     order2=1,                # Scalar or 1-D array of positive orders for |delta f2|.
     max_sep=None,            # Maximum lag to compute
     axis=0,                  # Axis along which to compute
-    lags='powers of 1.2'     # 'all', 'powers of X', or array of lags
+    lags='powers of 1.2',    # 'all', 'powers of X', or array of lags
+    periodic=False           # Periodic (toroidal) domain; see note below
 ) -> (lags, cosf_values)
 # cosf_values.shape:
 #   (n_lags,)                        both scalar
@@ -183,6 +188,18 @@ scaleinvariance.costructure_function(
 # single-field structure_function, which only needs one field finite).
 # Self-consistency: costructure_function(f, f, p, q) == structure_function(f, p+q).
 ```
+
+**Periodic (toroidal) domain** — `structure_function`, `costructure_function`,
+`haar_fluctuation` (and the `*_hurst` wrappers, `K_empirical`, `two_point_C1`)
+accept `periodic=True`. Increments / Haar windows then wrap around the array
+end along `axis`, so every lag uses all `L` samples instead of dropping the
+`L - r` edge pairs — the correct choice for data on a periodic domain (e.g. the
+output of the `periodic=True` simulators). For the structure function
+`S(r) = S(L - r)`, so lags are capped at `L // 2` and an explicit
+`max_sep > L // 2` raises `ValueError`. The Haar fluctuation has **no** such
+reflection symmetry (its half-window width `r/2` differs from `(L - r)/2`), so
+it keeps the full lag range up to `L - 1`. `spectral_hurst` /
+`power_spectrum_binned` are FFT-based and already periodic (no flag).
 
 ```python
 scaleinvariance.power_spectrum_binned(
@@ -204,7 +221,8 @@ scaleinvariance.two_point_C1(
     scaling_method='structure_function',  # or 'haar_fluctuation'
     min_sep=None,                   # Min separation for scaling
     max_sep=None,                   # Max separation for scaling
-    axis=0                          # Axis along which to compute
+    axis=0,                         # Axis along which to compute
+    periodic=False                  # Periodic (toroidal) domain
 ) -> (C1, uncertainty)   # NOTE: uncertainty from error propagation is approximate
 ```
 
@@ -225,7 +243,8 @@ scaleinvariance.K_empirical(
     min_sep=None,                   # Min lag for scaling fits
     max_sep=None,                   # Max lag for scaling fits
     axis=0,                         # Axis along which to compute
-    nan_behavior='raise'            # 'raise' or 'ignore' (haar_fluctuation only)
+    nan_behavior='raise',           # 'raise' or 'ignore' (haar_fluctuation only)
+    periodic=False                  # Periodic (toroidal) domain
 ) -> (q_values, K_values, H_fit, C1_fit, alpha_fit)
 ```
 

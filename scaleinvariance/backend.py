@@ -580,6 +580,22 @@ def flip(x, axis):
         return torch.flip(_to_torch(x), dims=(axis,))
 
 
+def roll(x, shift, axis=None):
+    """Circularly shift array elements along an axis.
+
+    Wraps :func:`numpy.roll` / :func:`torch.roll`. ``shift`` is the number
+    of places elements are shifted (may be negative); ``axis`` selects the
+    axis (``None`` flattens, matching numpy).
+    """
+    if _backend == 'numpy':
+        return np.roll(x, shift, axis=axis)
+    else:
+        x_torch = _to_torch(x)
+        if axis is None:
+            return torch.roll(x_torch, shifts=shift)
+        return torch.roll(x_torch, shifts=shift, dims=axis)
+
+
 def conj(x):
     """Complex conjugate. Preserves input dtype."""
     if _backend == 'numpy':
@@ -883,8 +899,12 @@ def imag(x):
 # Convolution
 # ============================================================================
 
-def convolve1d(signal, kernel, axis=-1, nan_safe=False):
-    """1-D aperiodic convolution along *axis*, mode='valid'.
+def convolve1d(signal, kernel, axis=-1, nan_safe=False, circular=False):
+    """1-D convolution along *axis*.
+
+    By default this is an aperiodic ``mode='valid'`` convolution. With
+    ``circular=True`` it becomes a periodic (wraparound) convolution along
+    *axis* instead.
 
     Parameters
     ----------
@@ -895,19 +915,30 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False):
     axis : int
         Axis of *signal* along which to convolve.
     nan_safe : bool
-        If True, produce NaN at output positions whose mode='valid' window
-        contained any NaN in *signal*. Routing depends on the active
-        backend: torch uses an FFT-based mask trick on-device; numpy uses
-        scipy's direct (non-FFT) convolution.
+        If True, produce NaN at output positions whose window contained any
+        NaN in *signal*. For the aperiodic path the window is the
+        ``mode='valid'`` window; for ``circular=True`` it is the
+        length-``len(kernel)`` wraparound window. Routing for the aperiodic
+        path depends on the active backend (torch uses an FFT-based mask
+        trick on-device; numpy uses scipy's direct convolution); the
+        circular path uses the FFT mask trick on both backends.
+    circular : bool
+        If True, convolve periodically (wraparound) along *axis*. Requires
+        ``len(kernel) <= signal.shape[axis]``.
 
     Returns
     -------
     array
-        Convolution result with size ``signal.shape[axis] - len(kernel) + 1``
-        along *axis*.
+        Convolution result along *axis*. Size is
+        ``signal.shape[axis] - len(kernel) + 1`` for the aperiodic path, or
+        ``signal.shape[axis]`` for ``circular=True``.
     """
     if len(kernel) == 0:
         raise ValueError("kernel cannot be empty")
+    if circular:
+        if nan_safe:
+            return _convolve1d_fft_circular_nan_safe(signal, kernel, axis)
+        return _convolve1d_fft_circular(signal, kernel, axis)
     if nan_safe:
         if _backend == 'torch':
             return _convolve1d_fft_nan_safe(signal, kernel, axis)
@@ -1029,3 +1060,92 @@ def _convolve1d_direct(signal, kernel, axis):
     if _backend != 'numpy':
         return _to_torch(result)
     return result
+
+
+def _convolve1d_fft_circular(signal, kernel, axis):
+    """FFT-based circular (periodic) convolution along *axis*.
+
+    The signal and the zero-padded kernel are both transformed at the
+    signal length ``L`` (no extra padding), so the convolution wraps around
+    the array end. Output length is ``L`` along *axis*. Requires
+    ``len(kernel) <= L``.
+    """
+    sig = asarray(signal)
+    n_sig = sig.shape[axis]
+    n_ker = len(kernel)
+    if n_ker > n_sig:
+        raise ValueError(
+            f"Kernel length ({n_ker}) exceeds signal length ({n_sig}) along axis {axis}; "
+            "circular convolution requires kernel <= signal."
+        )
+    ax = axis % sig.ndim
+
+    # Build N-D kernel (shape 1 everywhere except along axis), pad to n_sig.
+    kernel_shape = [1] * sig.ndim
+    kernel_shape[ax] = n_ker
+    if _backend == 'numpy':
+        kernel_nd = np.asarray(kernel).reshape(kernel_shape)
+    else:
+        kernel_nd = _to_torch(kernel).reshape(kernel_shape)
+    kernel_padded = pad(kernel_nd, 0, n_sig - n_ker, axis=ax)
+
+    sig_fft = rfft(sig, axis=ax)
+    ker_fft = rfft(kernel_padded, axis=ax)
+    return irfft(sig_fft * ker_fft, n=n_sig, axis=ax)
+
+
+def _convolve1d_fft_circular_nan_safe(signal, kernel, axis):
+    """FFT-based NaN-safe circular convolution along *axis*.
+
+    The periodic analogue of :func:`_convolve1d_fft_nan_safe`: any NaN
+    inside an output position's length-``n_ker`` *wraparound* window yields
+    NaN at that position.
+
+    1. Replace NaNs with 0 and run the regular circular FFT convolution.
+    2. Count valid (non-NaN) inputs in each length-``n_ker`` circular
+       window. The window for output ``p`` spans signal indices
+       ``[p - n_ker + 1 .. p] (mod L)``; the wrap is handled by prepending
+       the last ``n_ker - 1`` validity flags before a prepend-zero
+       ``cumsum``. The count is accumulated in int64 and compared exactly,
+       so the mask stays correct for any signal length a float tensor can
+       represent.
+    3. Overwrite outputs whose window was not fully valid with NaN.
+    """
+    sig = asarray(signal)
+    n_sig = sig.shape[axis]
+    n_ker = len(kernel)
+    if n_ker > n_sig:
+        raise ValueError(
+            f"Kernel length ({n_ker}) exceeds signal length ({n_sig}) along axis {axis}; "
+            "circular convolution requires kernel <= signal."
+        )
+    ax = axis % sig.ndim
+
+    nan_mask = isnan(sig)
+    if _backend == 'torch':
+        zero = torch.zeros((), dtype=sig.dtype, device=sig.device)
+        clean = torch.where(nan_mask, zero, sig)
+        valid = (~nan_mask).to(torch.int64)
+    else:
+        clean = np.where(nan_mask, np.asarray(0, dtype=sig.dtype), sig)
+        valid = (~nan_mask).astype(np.int64)
+
+    result = _convolve1d_fft_circular(clean, kernel, ax)
+
+    # Wrap-aware valid count per length-n_ker circular window.
+    pre_slice = [slice(None)] * sig.ndim
+    pre_slice[ax] = slice(n_sig - (n_ker - 1), n_sig)
+    ext = concatenate([valid[tuple(pre_slice)], valid], axis=ax)
+    padded = pad(ext, 1, 0, axis=ax)
+    cum = cumsum(padded, axis=ax)
+    end_slice = [slice(None)] * sig.ndim
+    end_slice[ax] = slice(n_ker, n_ker + n_sig)
+    start_slice = [slice(None)] * sig.ndim
+    start_slice[ax] = slice(0, n_sig)
+    valid_count = cum[tuple(end_slice)] - cum[tuple(start_slice)]
+
+    if _backend == 'torch':
+        nan_val = torch.tensor(float('nan'), dtype=result.dtype, device=result.device)
+        return torch.where(valid_count == n_ker, result, nan_val)
+    return np.where(valid_count == n_ker, result,
+                    np.asarray(np.nan, dtype=result.dtype))

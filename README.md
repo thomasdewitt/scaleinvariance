@@ -20,10 +20,14 @@ View example FIF simulation output in the [Multifractal Explorer](https://thomas
 
 All methods support multi-dimensional arrays, averaging over dimensions that are orthogonal to the specified dimension along which spectra are calculated (specified by `axis`. Data and fit line for plotting may be returned with `return_fit=True`.
 
+`structure_function_hurst()` and `haar_fluctuation_hurst()` accept `periodic=True` for data on a periodic (toroidal) domain — e.g. the output of the `periodic=True` simulators. (`spectral_hurst()` is FFT-based and already periodic.)
+
 #### Structure functions
 
 - **Structure function**: `structure_function()` - Order-`q` structure function (`q` may be scalar or array-valued)
 - **Co-structure function**: `costructure_function()` - Mixed-moment structure function for two fields
+
+`structure_function()`, `costructure_function()`, and `haar_fluctuation()` (and the intermittency estimators `K_empirical()` / `two_point_C1()`) accept `periodic=True` to treat the domain as periodic along `axis`: increments and Haar windows wrap around the array end (every lag uses all `L` samples) rather than dropping the edge pairs. For the structure function `S(r) = S(L - r)`, so lags are capped at `L // 2`; the Haar fluctuation has no such symmetry and keeps the full lag range.
 
 ### Simulation
 

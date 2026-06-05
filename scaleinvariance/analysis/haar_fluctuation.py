@@ -5,7 +5,8 @@ from .. import backend as B
 from ..utils import process_lags, estimate_hurst_from_scaling
 
 
-def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', nan_behavior='raise'):
+def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2',
+                     nan_behavior='raise', periodic=False):
     """
     Calculate the mean absolute Haar fluctuation for regularly spaced scalar data along a given axis.
 
@@ -34,6 +35,16 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
         Behavior when encountering NaN values in the data. Options are:
             - 'raise': Raise an error if NaN values are found (default).
             - 'ignore': Ignore NaN values in the calculation.
+    periodic : bool, optional
+        If True, treat the domain as periodic (toroidal) along ``axis``: the
+        Haar fluctuation is computed by circular convolution, giving all L
+        wraparound windows per lag rather than dropping the L - r + 1 edge
+        windows. Unlike the structure function, the Haar fluctuation has no
+        F(r) = F(L - r) reflection symmetry (its half-window width r/2 differs
+        from (L - r)/2), so the full lag range up to the array size is kept;
+        the only constraint is r <= L (the kernel must fit the domain). NaN
+        handling under ``nan_behavior='ignore'`` is respected (a wraparound
+        window containing any NaN yields NaN at that position).
 
     Returns
     --------
@@ -92,8 +103,9 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
         kernel = B.ones(lag) / (lag/2)
         kernel[:lag//2] = kernel[:lag//2] * -1
 
-        # Convolution via backend
-        abs_conv = B.abs(B.convolve1d(data, kernel, axis=axis, nan_safe=has_nans))
+        # Convolution via backend (circular when periodic)
+        abs_conv = B.abs(B.convolve1d(data, kernel, axis=axis, nan_safe=has_nans,
+                                      circular=periodic))
 
         if (B.numel(abs_conv) == 0) or B.all(B.isnan(abs_conv)):
             haar_flucs[:, i] = np.nan
@@ -110,7 +122,8 @@ def haar_fluctuation(data, order=1, max_sep=None, axis=0, lags='powers of 1.2', 
     return np.array(lags, dtype=np.int64), haar_flucs
 
 
-def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False):
+def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=False,
+                           periodic=False):
     """
     Calculate the Hurst exponent using Haar fluctuation analysis.
 
@@ -132,6 +145,10 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
         Axis along which to compute the Haar fluctuation (default: 0).
     return_fit : bool, optional
         If True, return the lags, fluctuation values, and fitted line.
+    periodic : bool, optional
+        If True, use periodic (toroidal) circular convolution along ``axis``
+        (see `haar_fluctuation`). Unlike the structure function, no L // 2 cap
+        applies; the full lag range is retained.
 
     Returns
     --------
@@ -161,13 +178,11 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
 
     # Set default separations
     if max_sep is None:
+        max_sep = array_size - 1
         if array_size <= 512:
-            max_sep = array_size - 1
             warnings.warn(f"Array size ({array_size}) is small. Using max_sep={max_sep}. "
                          "Consider using larger arrays for more reliable Hurst estimation.",
                          UserWarning)
-        else:
-            max_sep = array_size - 1
 
     if min_sep is None:
         if array_size <= 512:
@@ -177,7 +192,8 @@ def haar_fluctuation_hurst(data, min_sep=None, max_sep=None, axis=0, return_fit=
 
     # Calculate Haar fluctuations
     lags, haar_values = haar_fluctuation(data, order=1, max_sep=max_sep,
-                                                 axis=axis, lags='powers of 1.2')
+                                                 axis=axis, lags='powers of 1.2',
+                                                 periodic=periodic)
 
     # Use common Hurst estimation utility
     return estimate_hurst_from_scaling(lags, haar_values, min_sep, max_sep, return_fit)

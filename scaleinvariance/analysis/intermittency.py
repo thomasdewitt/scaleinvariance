@@ -34,7 +34,7 @@ def K_analytic(q, C1, alpha):
 
 def K_empirical(data, q_values=None, scaling_method='structure_function',
                 hurst_fit_method='fixed', min_sep=None, max_sep=None, axis=0,
-                nan_behavior='raise'):
+                nan_behavior='raise', periodic=False):
     """
     Estimate the multifractal K(q) scaling function empirically.
 
@@ -71,6 +71,9 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
     nan_behavior : str, optional
         Passed to haar_fluctuation when scaling_method='haar_fluctuation'.
         'raise' (default) or 'ignore'.
+    periodic : bool, optional
+        If True, use periodic (toroidal) scaling along ``axis`` (see
+        `structure_function` / `haar_fluctuation`).
 
     Returns
     -------
@@ -97,10 +100,10 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
         )
 
     if scaling_method == 'structure_function':
-        analysis_kwargs = {}
+        analysis_kwargs = {'periodic': periodic}
         analysis_func = structure_function
     elif scaling_method == 'haar_fluctuation':
-        analysis_kwargs = {'nan_behavior': nan_behavior}
+        analysis_kwargs = {'nan_behavior': nan_behavior, 'periodic': periodic}
         analysis_func = haar_fluctuation
     else:
         raise ValueError(f"Unknown scaling_method: '{scaling_method}'. Use 'structure_function' or 'haar_fluctuation'")
@@ -137,7 +140,7 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
 
 
 def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_function',
-                 min_sep=None, max_sep=None, axis=0):
+                 min_sep=None, max_sep=None, axis=0, periodic=False):
     """
     Calculate the intermittency parameter C1 from multifractal scaling.
 
@@ -165,6 +168,9 @@ def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_fun
         Maximum separation for scaling analysis.
     axis : int, optional
         Axis along which to compute scaling (default: 0).
+    periodic : bool, optional
+        If True, use periodic (toroidal) scaling along ``axis`` (see
+        `structure_function` / `haar_fluctuation`).
 
     Returns
     -------
@@ -188,7 +194,8 @@ def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_fun
         raise ValueError(f"Unknown scaling_method: {scaling_method}. Use 'structure_function' or 'haar_fluctuation'")
 
     # Calculate scaling exponents for order 1 and q in one vectorized call
-    lags, values = analysis_func(data, order=[1.0, float(order)], max_sep=max_sep, axis=axis)
+    lags, values = analysis_func(data, order=[1.0, float(order)], max_sep=max_sep, axis=axis,
+                                 periodic=periodic)
     xi_1, sigma_1 = estimate_hurst_from_scaling(lags, values[0], min_sep, max_sep, return_fit=False)
     xi_q, sigma_q = estimate_hurst_from_scaling(lags, values[1], min_sep, max_sep, return_fit=False)
 
