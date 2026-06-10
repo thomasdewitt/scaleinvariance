@@ -533,6 +533,30 @@ All public functions return NumPy arrays regardless of backend. Internally,
 the torch backend keeps data as native tensors (on the active device) to
 avoid per-operation CPU<->GPU transfers.
 
+### Simulations larger than GPU memory (out-of-core FFTs)
+
+FIF peak memory is ~4x the simulation-domain buffer (and the domain is
+doubled along each non-periodic axis, so a fully non-periodic 2D output
+costs 4x its own element count again, 8x in 3D). When a simulation no
+longer fits in GPU VRAM, keep the arrays in host RAM and stream only the
+FFTs through the GPU:
+
+```python
+scaleinvariance.set_backend('torch')
+scaleinvariance.set_device('cpu')        # arrays live in host RAM
+scaleinvariance.set_fft_device('cuda')   # N-D FFTs stream through the GPU in chunks
+# optional chunk size: scaleinvariance.set_fft_device('cuda', chunk_bytes=2**30)
+scaleinvariance.set_fft_device(None)     # disable (back to direct FFTs)
+```
+
+Maximum size is then bounded by host RAM instead of VRAM (typically ~10x
+larger), at the cost of PCIe transfers per FFT pass. GPU memory use is a
+few times `chunk_bytes` (default 512 MB) regardless of simulation size;
+element-wise stages run on CPU in this mode. Only full N-D transforms
+(`ndim >= 2`) are chunked — 1D simulations are unaffected. Chunked FFTs
+are mathematically identical but not bit-identical to direct ones
+(differences at FFT round-off level).
+
 ### Overflow guards in FIF simulations
 
 `FIF_1D` and `FIF_ND` clip the internal log-flux to a precision-aware

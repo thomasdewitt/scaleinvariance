@@ -47,5 +47,7 @@ from .backend import (
     get_numerical_precision,
     set_device,
     get_device,
+    set_fft_device,
+    get_fft_device,
     to_numpy,
 )

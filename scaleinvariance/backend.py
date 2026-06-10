@@ -162,6 +162,85 @@ def get_device():
     return _device
 
 
+# FFT offload state: when set, large N-D FFTs are computed by streaming
+# axis-batched chunks through this device instead of transforming the whole
+# array at once on the array's own device.
+_fft_device = None
+_fft_device_obj = None
+_fft_chunk_bytes = 1 << 29  # 512 MB per streamed chunk
+
+
+def set_fft_device(device=None, chunk_bytes=None):
+    """Route N-D FFTs through a separate compute device in chunks.
+
+    This enables *out-of-core* FFTs: arrays stay resident on the main
+    device (typically CPU/host RAM, set via :func:`set_device`), and each
+    multi-dimensional FFT is decomposed into per-axis batched 1D FFTs that
+    are streamed through *device* (typically a GPU) one chunk at a time.
+    Peak memory on the FFT device is a few times ``chunk_bytes`` regardless
+    of array size, so the maximum simulation size is bounded by host RAM
+    rather than GPU VRAM — typically an order of magnitude larger — while
+    retaining most of the GPU's FFT throughput.
+
+    Typical use for simulations larger than GPU memory::
+
+        import scaleinvariance as si
+        si.set_backend('torch')
+        si.set_device('cpu')          # arrays live in host RAM
+        si.set_fft_device('cuda')     # FFTs stream through the GPU
+
+    Only ``backend='torch'`` is supported. Only full N-D transforms
+    (``ndim >= 2``, all axes) are chunked; 1D transforms and axis-subset
+    transforms run directly on the array's device as usual.
+
+    Chunked transforms are mathematically identical to direct ones but are
+    not bit-identical (per-axis transform order differs); expect
+    differences at the level of FFT round-off.
+
+    Parameters
+    ----------
+    device : str or None
+        Device to stream FFT chunks through (e.g. ``'cuda'``). ``None``
+        (default) disables offloading and restores direct FFTs.
+    chunk_bytes : int, optional
+        Approximate bytes per streamed chunk. Default 2**29 (512 MB).
+        The FFT device needs roughly 3-4x this much free memory.
+
+    Raises
+    ------
+    ImportError
+        If a device is requested but PyTorch is not installed.
+    RuntimeError
+        If CUDA is requested but not available.
+    """
+    global _fft_device, _fft_device_obj, _fft_chunk_bytes
+    if chunk_bytes is not None:
+        chunk_bytes = int(chunk_bytes)
+        if chunk_bytes <= 0:
+            raise ValueError(f"chunk_bytes must be positive; got {chunk_bytes}")
+        _fft_chunk_bytes = chunk_bytes
+    if device is None:
+        _fft_device = None
+        _fft_device_obj = None
+        return
+    if not _torch_available:
+        raise ImportError(
+            f"FFT device '{device}' requested but PyTorch is not installed. "
+            "Install with: pip install torch"
+        )
+    if 'cuda' in device and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"FFT device '{device}' requested but CUDA is not available."
+        )
+    _fft_device = device
+    _fft_device_obj = torch.device(device)
+
+
+def get_fft_device():
+    """Get the FFT offload device string, or None if offloading is disabled."""
+    return _fft_device
+
+
 # ============================================================================
 # Dtype helpers
 # ============================================================================
@@ -337,16 +416,20 @@ def fftn(x, axes=None):
     """N-D FFT."""
     if _backend == 'numpy':
         return np.fft.fftn(x, axes=axes)
-    else:
-        return torch.fft.fftn(_to_torch(x, _active_complex_dtype_torch()), dim=axes)
+    x_t = _to_torch(x, _active_complex_dtype_torch())
+    if _fft_offload_active(x_t, axes):
+        return _chunked_cfftn(x_t, inverse=False)
+    return torch.fft.fftn(x_t, dim=axes)
 
 
 def ifftn(x, axes=None):
     """N-D inverse FFT."""
     if _backend == 'numpy':
         return np.fft.ifftn(x, axes=axes)
-    else:
-        return torch.fft.ifftn(_to_torch(x, _active_complex_dtype_torch()), dim=axes)
+    x_t = _to_torch(x, _active_complex_dtype_torch())
+    if _fft_offload_active(x_t, axes):
+        return _chunked_cfftn(x_t, inverse=True)
+    return torch.fft.ifftn(x_t, dim=axes)
 
 
 def rfft(x, axis=-1):
@@ -370,8 +453,10 @@ def rfftn(x, axes=None):
     """N-D real FFT (real input, last axis halved)."""
     if _backend == 'numpy':
         return np.fft.rfftn(x, axes=axes)
-    else:
-        return torch.fft.rfftn(_to_torch(x, _active_real_dtype_torch()), dim=axes)
+    x_t = _to_torch(x, _active_real_dtype_torch())
+    if _fft_offload_active(x_t, axes):
+        return _chunked_rfftn(x_t)
+    return torch.fft.rfftn(x_t, dim=axes)
 
 
 def irfft2(x, s):
@@ -382,14 +467,22 @@ def irfft2(x, s):
         return torch.fft.irfft2(_to_torch(x, _active_complex_dtype_torch()), s=s)
 
 
-def irfftn(x, s):
-    """N-D inverse real FFT."""
+def irfftn(x, s, overwrite_input=False):
+    """N-D inverse real FFT.
+
+    ``overwrite_input=True`` permits the chunked out-of-core path (active
+    when an FFT device is set) to reuse the input spectrum as scratch,
+    avoiding one full-size complex copy. Only pass it for spectra you
+    discard afterwards. Ignored on the numpy backend and on direct
+    transforms.
+    """
     axes = list(range(-len(s), 0))
     if _backend == 'numpy':
         return np.fft.irfftn(x, s=s, axes=axes)
-    else:
-        return torch.fft.irfftn(_to_torch(x, _active_complex_dtype_torch()),
-                                s=s, dim=axes)
+    x_t = _to_torch(x, _active_complex_dtype_torch())
+    if _fft_device_obj is not None and x_t.ndim >= 2 and len(s) == x_t.ndim:
+        return _chunked_irfftn(x_t, s, overwrite_input=overwrite_input)
+    return torch.fft.irfftn(x_t, s=s, dim=axes)
 
 
 def ifftshift(x, axes=None):
@@ -398,6 +491,108 @@ def ifftshift(x, axes=None):
         return np.fft.ifftshift(x, axes=axes)
     else:
         return torch.fft.ifftshift(_to_torch(x), dim=axes)
+
+
+# ----------------------------------------------------------------------------
+# Chunked / out-of-core FFT engine (torch only; see set_fft_device)
+# ----------------------------------------------------------------------------
+# N-D transforms decompose into per-axis batched 1D transforms. Each stage
+# streams chunks of bounded size (_fft_chunk_bytes) through the FFT device,
+# so device memory stays O(chunk) while the arrays themselves stay on the
+# main device (typically host RAM). Chunked results are mathematically
+# identical to direct transforms but differ at FFT round-off level because
+# the per-axis evaluation order differs.
+
+def _fft_offload_active(x_t, axes):
+    """Chunk a full N-D transform of a torch tensor when offload is enabled."""
+    return _fft_device_obj is not None and axes is None and x_t.ndim >= 2
+
+
+def _slab_slices(n, step):
+    for start in range(0, n, step):
+        yield slice(start, min(start + step, n))
+
+
+def _chunk_rows(row_bytes):
+    # builtins.max — this module shadows `max` with its own reduction.
+    rows = _fft_chunk_bytes // row_bytes if row_bytes > 0 else 1
+    return rows if rows > 0 else 1
+
+
+def _chunked_fft_axis_(z, ax, inverse):
+    """In-place chunked 1D (i)FFT along axis ``ax`` of complex tensor ``z``,
+    streamed through the FFT device. Chunks along a different axis so each
+    transferred block contains complete transform lines."""
+    nd = z.ndim
+    chunk_ax = nd - 1 if ax != nd - 1 else nd - 2
+    n_chunk = z.shape[chunk_ax]
+    per_unit = (z.numel() // n_chunk) * z.element_size()
+    step = _chunk_rows(per_unit)
+    fn = torch.fft.ifft if inverse else torch.fft.fft
+    index = [slice(None)] * nd
+    for sl in _slab_slices(n_chunk, step):
+        index[chunk_ax] = sl
+        idx = tuple(index)
+        g = z[idx].contiguous().to(_fft_device_obj)
+        z[idx] = fn(g, dim=ax).to(z.device)
+
+
+def _chunked_rfftn(x):
+    """Out-of-core rfftn over all axes of a real tensor (ndim >= 2)."""
+    x = x.contiguous()
+    shape = tuple(x.shape)
+    out_shape = shape[:-1] + (shape[-1] // 2 + 1,)
+    out = torch.empty(out_shape, dtype=_active_complex_dtype_torch(),
+                      device=x.device)
+    # Stage 1: real FFT along the contiguous last axis, slab over rows.
+    x2 = x.reshape(-1, shape[-1])
+    o2 = out.reshape(-1, out_shape[-1])
+    step = _chunk_rows(shape[-1] * x.element_size())
+    for sl in _slab_slices(x2.shape[0], step):
+        g = x2[sl].to(_fft_device_obj)
+        o2[sl] = torch.fft.rfft(g, dim=-1).to(x.device)
+    # Remaining axes: complex FFTs over the half-spectrum.
+    for ax in range(x.ndim - 1):
+        _chunked_fft_axis_(out, ax, inverse=False)
+    return out
+
+
+def _chunked_irfftn(x, s, overwrite_input=False):
+    """Out-of-core irfftn (all axes) of complex spectrum ``x`` to real shape ``s``."""
+    s = tuple(int(v) for v in s)
+    expected = s[:-1] + (s[-1] // 2 + 1,)
+    if tuple(x.shape) != expected:
+        raise ValueError(
+            f"Chunked irfftn requires spectrum shape {expected} for output "
+            f"shape {s}; got {tuple(x.shape)}. Call set_fft_device(None) for "
+            "cropped/padded inverse transforms."
+        )
+    if overwrite_input and x.is_contiguous():
+        work = x
+    elif x.is_contiguous():
+        work = x.clone()
+    else:
+        work = x.contiguous()
+    for ax in range(x.ndim - 1):
+        _chunked_fft_axis_(work, ax, inverse=True)
+    out = torch.empty(s, dtype=_active_real_dtype_torch(), device=x.device)
+    w2 = work.reshape(-1, work.shape[-1])
+    o2 = out.reshape(-1, s[-1])
+    step = _chunk_rows(work.shape[-1] * work.element_size())
+    for sl in _slab_slices(w2.shape[0], step):
+        g = w2[sl].to(_fft_device_obj)
+        o2[sl] = torch.fft.irfft(g, n=s[-1], dim=-1).to(x.device)
+    return out
+
+
+def _chunked_cfftn(x, inverse):
+    """Out-of-core complex fftn/ifftn over all axes (ndim >= 2)."""
+    work = x.contiguous()
+    if work is x:
+        work = x.clone()
+    for ax in range(x.ndim):
+        _chunked_fft_axis_(work, ax, inverse)
+    return work
 
 
 # ============================================================================
@@ -453,10 +648,15 @@ def exponential(scale, size=None):
     else:
         if size is None:
             size = 1
-        rate = torch.tensor(1.0 / scale, dtype=_active_real_dtype_torch(),
-                            device=_device_obj)
-        dist = torch.distributions.Exponential(rate)
-        return dist.sample(size if isinstance(size, tuple) else (size,))
+        shape = size if isinstance(size, tuple) else (size,)
+        # Draw via Tensor.exponential_ directly. Exponential(rate).sample()
+        # is `empty(shape).exponential_() / rate`, which allocates two extra
+        # full-size buffers (the pre-division draw and the division result)
+        # and is bit-identical to this for scale=1 since the underlying RNG
+        # transform is the same call.
+        out = torch.empty(shape, dtype=_active_real_dtype_torch(),
+                          device=_device_obj)
+        return out.exponential_(lambd=1.0 / scale)
 
 
 # ============================================================================
@@ -670,6 +870,123 @@ def pad(x, before, after, axis=-1, value=0):
         pad_list[idx] = before
         pad_list[idx + 1] = after
         return F.pad(x_torch, pad_list, mode='constant', value=value)
+
+
+# ============================================================================
+# In-place Operations
+# ============================================================================
+# These mutate (and return) their first argument. They exist so the
+# simulation pipeline can bound its peak memory: every call below performs
+# exactly the same arithmetic as the out-of-place equivalent (bit-identical
+# results), just without allocating a new full-size buffer. Only pass
+# arrays you own — never user-supplied input.
+
+def imul(x, y):
+    """In-place ``x *= y``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.multiply(x, y, out=x)
+    else:
+        x.mul_(y)
+    return x
+
+
+def iadd(x, y):
+    """In-place ``x += y``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.add(x, y, out=x)
+    else:
+        x.add_(y)
+    return x
+
+
+def isub(x, y):
+    """In-place ``x -= y``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.subtract(x, y, out=x)
+    else:
+        x.sub_(y)
+    return x
+
+
+def idiv(x, y):
+    """In-place ``x /= y``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.divide(x, y, out=x)
+    else:
+        x.div_(y)
+    return x
+
+
+def ipow(x, p):
+    """In-place ``x **= p``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.power(x, p, out=x)
+    else:
+        x.pow_(p)
+    return x
+
+
+def ineg(x):
+    """In-place ``x = -x``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.negative(x, out=x)
+    else:
+        x.neg_()
+    return x
+
+
+def iexp(x):
+    """In-place ``x = exp(x)``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.exp(x, out=x)
+    else:
+        x.exp_()
+    return x
+
+
+def icos(x):
+    """In-place ``x = cos(x)``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.cos(x, out=x)
+    else:
+        x.cos_()
+    return x
+
+
+def isin(x):
+    """In-place ``x = sin(x)``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.sin(x, out=x)
+    else:
+        x.sin_()
+    return x
+
+
+def isqrt(x):
+    """In-place ``x = sqrt(x)``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.sqrt(x, out=x)
+    else:
+        x.sqrt_()
+    return x
+
+
+def iclip(x, x_min, x_max):
+    """In-place clip. ``x_min`` or ``x_max`` may be ``None``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.clip(x, x_min, x_max, out=x)
+    else:
+        x.clamp_(min=x_min, max=x_max)
+    return x
+
+
+def imaximum(x, scalar):
+    """In-place element-wise ``x = maximum(x, scalar)``. Returns ``x``."""
+    if _backend == 'numpy':
+        np.maximum(x, scalar, out=x)
+    else:
+        x.clamp_(min=scalar)
+    return x
 
 
 # ============================================================================

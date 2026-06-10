@@ -24,7 +24,7 @@ def _isotropic_rfft_frequencies(shape):
         broadcast_shape[axis_idx] = axis.shape[0]
         term = axis.reshape(broadcast_shape) ** 2
         freqs_squared = term if freqs_squared is None else freqs_squared + term
-    return B.sqrt(freqs_squared)
+    return B.isqrt(freqs_squared)
 
 
 def _pow_or_inf(base, exp):
@@ -149,6 +149,67 @@ def _zero_odd_axis_nyquist(kernel, shape, odd_tuple):
         kernel[tuple(slicer)] = 0
 
 
+def _build_riesz_kernel(shape, H, outer_scale, odd_tuple):
+    """Build the rfftn-packed Fourier kernel used by
+    :func:`fractional_integral_spectral`: ``|f|^(-H)`` with low-frequency
+    regularization at ``1/outer_scale``, DC handling, and (optionally) the
+    odd-axes phase factor ``i^k · Π sign(f_j)``.
+
+    Returns a real array for the even path (and for an even number of odd
+    axes), complex for an odd number of odd axes. ``outer_scale`` must
+    already be resolved (not None) and the overflow guard already checked.
+    """
+    ndim = len(shape)
+    has_odd = any(odd_tuple)
+    rfft_shape = shape[:-1] + (shape[-1] // 2 + 1,)
+    freqs = _isotropic_rfft_frequencies(shape)
+    min_freq = 1.0 / float(outer_scale)
+    B.imaximum(freqs, min_freq)
+
+    magnitude = B.ipow(freqs, -H)
+    del freqs
+
+    if magnitude.shape != rfft_shape:
+        magnitude = magnitude + B.zeros(rfft_shape, dtype=magnitude.dtype)
+
+    if not has_odd:
+        # Standard (even) path: fill DC with nearest non-DC value to avoid a
+        # spectral notch.
+        kernel = magnitude
+        dc_index = (0,) * ndim
+        if B.numel(kernel) == 1:
+            kernel[dc_index] = 1.0
+        else:
+            neighbor_index = (1,) + (0,) * (ndim - 1)
+            kernel[dc_index] = kernel[neighbor_index]
+    else:
+        # Odd path: assemble K = i^k · Π sign(f_j) · |f|^(-H)
+        sign_product = _build_odd_phase_factor(shape, odd_tuple)
+        k_odd = sum(odd_tuple)
+        # i^k splits into a real sign (for even k) and a purely imaginary
+        # factor (for odd k). For k mod 4 = 0: +1; 1: +i; 2: -1; 3: -i.
+        phase_sign = 1.0 if (k_odd // 2) % 2 == 0 else -1.0
+        signed_magnitude = B.imul(magnitude, sign_product)
+        if phase_sign < 0:
+            B.ineg(signed_magnitude)
+        del magnitude, sign_product
+
+        if k_odd % 2 == 0:
+            kernel = signed_magnitude
+        else:
+            # Purely imaginary kernel: store in a complex array's imag part.
+            complex_dtype = B._active_complex_dtype_np()
+            kernel = B.zeros(signed_magnitude.shape, dtype=complex_dtype)
+            kernel.imag[:] = signed_magnitude
+            del signed_magnitude
+
+        # Nyquist along each odd even-sized axis must be zero. DC is already
+        # zero because sign(0) = 0.
+        _zero_odd_axis_nyquist(kernel, shape, odd_tuple)
+
+    return kernel
+
+
 def fractional_integral_spectral(signal, H, outer_scale=None, odd_axes=None):
     """
     Apply an acausal spectral fractional integral of order ``H`` to a real signal.
@@ -238,54 +299,12 @@ def fractional_integral_spectral(signal, H, outer_scale=None, odd_axes=None):
 
     _guard_single_kernel_overflow(outer_scale, H, ndim)
 
-    rfft_shape = shape[:-1] + (shape[-1] // 2 + 1,)
-    freqs = _isotropic_rfft_frequencies(shape)
-    min_freq = 1.0 / float(outer_scale)
-    freqs_reg = B.maximum(freqs, min_freq)
-    del freqs
+    kernel = _build_riesz_kernel(shape, H, outer_scale, odd_tuple)
 
-    magnitude = freqs_reg ** (-H)
-    del freqs_reg
-
-    if magnitude.shape != rfft_shape:
-        magnitude = magnitude + B.zeros(rfft_shape, dtype=magnitude.dtype)
-
-    if not has_odd:
-        # Standard (even) path: fill DC with nearest non-DC value to avoid a
-        # spectral notch.
-        kernel = magnitude
-        dc_index = (0,) * ndim
-        if B.numel(kernel) == 1:
-            kernel[dc_index] = 1.0
-        else:
-            neighbor_index = (1,) + (0,) * (ndim - 1)
-            kernel[dc_index] = kernel[neighbor_index]
-    else:
-        # Odd path: assemble K = i^k · Π sign(f_j) · |f|^(-H)
-        sign_product = _build_odd_phase_factor(shape, odd_tuple)
-        k_odd = sum(odd_tuple)
-        # i^k splits into a real sign (for even k) and a purely imaginary
-        # factor (for odd k). For k mod 4 = 0: +1; 1: +i; 2: -1; 3: -i.
-        phase_sign = 1.0 if (k_odd // 2) % 2 == 0 else -1.0
-        signed_magnitude = phase_sign * sign_product * magnitude
-        del magnitude, sign_product
-
-        if k_odd % 2 == 0:
-            kernel = signed_magnitude
-        else:
-            # Purely imaginary kernel: store in a complex array's imag part.
-            complex_dtype = B._active_complex_dtype_np()
-            kernel = B.zeros(signed_magnitude.shape, dtype=complex_dtype)
-            kernel.imag[:] = signed_magnitude
-            del signed_magnitude
-
-        # Nyquist along each odd even-sized axis must be zero. DC is already
-        # zero because sign(0) = 0.
-        _zero_odd_axis_nyquist(kernel, shape, odd_tuple)
-
-    spectrum = B.rfftn(signal) * kernel
+    spectrum = B.rfftn(signal)
+    B.imul(spectrum, kernel)
     del kernel
-    result = B.irfftn(spectrum, s=shape)
+    result = B.irfftn(spectrum, s=shape, overwrite_input=True)
     del spectrum
     return result
 
@@ -378,10 +397,9 @@ def broken_fractional_integral_spectral(
     )
 
     rfft_shape = shape[:-1] + (shape[-1] // 2 + 1,)
-    freqs = _isotropic_rfft_frequencies(shape)
+    freqs_reg = _isotropic_rfft_frequencies(shape)
     min_freq = 1.0 / float(outer_scale)
-    freqs_reg = B.maximum(freqs, min_freq)
-    del freqs
+    B.imaximum(freqs_reg, min_freq)
 
     k_t = 1.0 / float(transition_wavelength)
     small_scale_prefactor = k_t ** (H_small_scale - H_large_scale)
@@ -402,8 +420,9 @@ def broken_fractional_integral_spectral(
         neighbor_index = (1,) + (0,) * (ndim - 1)
         kernel[dc_index] = kernel[neighbor_index]
 
-    spectrum = B.rfftn(signal) * kernel
+    spectrum = B.rfftn(signal)
+    B.imul(spectrum, kernel)
     del kernel
-    result = B.irfftn(spectrum, s=shape)
+    result = B.irfftn(spectrum, s=shape, overwrite_input=True)
     del spectrum
     return result

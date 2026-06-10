@@ -88,6 +88,15 @@ print(scaleinvariance.get_backend())  # 'torch' if available, else 'numpy'
 scaleinvariance.set_backend('numpy')  # Always use NumPy
 scaleinvariance.set_backend('torch')  # Use torch (raises error if not installed)
 
+# GPU acceleration (torch backend only)
+scaleinvariance.set_device('cuda')
+
+# Simulations larger than GPU memory: keep arrays in host RAM and stream
+# N-D FFTs through the GPU in bounded chunks (out-of-core mode). Maximum
+# simulation size is then limited by host RAM instead of VRAM.
+scaleinvariance.set_device('cpu')
+scaleinvariance.set_fft_device('cuda')
+
 # Configure threading (defaults to 90% CPU count)
 scaleinvariance.set_num_threads(8)
 ```
