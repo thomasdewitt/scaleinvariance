@@ -8,20 +8,30 @@ from .kernels import (
     create_kernel_spectral_odd,
     _normalize_axis_flag,
 )
-from .fractional_integration import fractional_integral_spectral
+from .fractional_integration import (
+    _build_riesz_kernel,
+    _guard_single_kernel_overflow,
+)
 
-def _clip_and_exp_flux(scaled, caller_name):
+def _clip_and_exp_flux(scaled, caller_name, in_place=False):
     """Clip the log-flux to safe exponent range for the active precision,
     warn if saturation occurred, and return ``exp(scaled)``.
 
     Prevents unbounded `exp(scaled)` from producing ``inf`` for extreme
     cascade amplitudes, and lets users know their simulation hit the
     ceiling instead of silently saturating.
+
+    With ``in_place=True`` the clip and exp mutate ``scaled`` (which must
+    be a native array of the active backend) instead of allocating new
+    full-size buffers. Used by the FIF pipeline on arrays it owns.
     """
     lo, hi = B.exp_clip_limits()
     saturated = int(B.sum(scaled < lo)) + int(B.sum(scaled > hi))
-    scaled_clipped = B.clip(scaled, lo, hi)
-    flux = B.exp(scaled_clipped)
+    if in_place:
+        flux = B.iexp(B.iclip(scaled, lo, hi))
+    else:
+        scaled_clipped = B.clip(scaled, lo, hi)
+        flux = B.exp(scaled_clipped)
     if saturated > 0:
         warnings.warn(
             f"{caller_name}: {saturated} flux samples clipped at exp limits "
@@ -34,9 +44,23 @@ def _clip_and_exp_flux(scaled, caller_name):
 
 
 def _extremal_levy_core(alpha, size=1):
-    """Core extremal Lévy generation. Returns native backend type (tensor or ndarray)."""
-    phi = (B.rand(size) - 0.5) * B.pi
-    R = B.exponential(scale=1.0, size=size)
+    """Core extremal Lévy generation. Returns native backend type (tensor or ndarray).
+
+    Computes, with ``t = alpha * (phi - phi0)``::
+
+        sample = sign(alpha - 1) * sin(t)
+                 * (clip(cos(phi)) * |alpha - 1|) ** (-1/alpha)
+                 * (clip(cos(phi - t)) / clip(R)) ** ((1 - alpha) / alpha)
+
+    The implementation below performs exactly these operations (bit-identical
+    to the straightforward expression) but uses in-place backend ops so the
+    peak allocation is three full-size buffers instead of ~seven. ``R`` is
+    drawn just before its single use; the RNG call order (uniform draw, then
+    exponential draw) is unchanged, so seeded streams are unaffected.
+    """
+    phi = B.rand(size)
+    B.isub(phi, 0.5)
+    B.imul(phi, B.pi)
     eps = B.eps()
 
     # Keep all alpha-dependent constants as Python floats — passing them
@@ -54,17 +78,33 @@ def _extremal_levy_core(alpha, size=1):
 
     # phi ∈ [-pi/2, pi/2] so cos(phi) ≥ 0; clip protects the negative-power
     # below against underflow (and floating-point drift at the endpoints).
-    cos_phi = B.clip(B.cos(phi), eps, None)
-    denom = B.clip(B.cos(phi - alpha_t * (phi - phi0)), eps, None)
-    R = B.clip(R, eps, None)
+    cos_phi = B.cos(phi)
+    B.iclip(cos_phi, eps, None)
 
-    sample = (
-        sign_alpha_minus_1
-        * B.sin(alpha_t * (phi - phi0))
-        * (cos_phi * abs_alpha1) ** inv_alpha_neg
-        * (denom / R) ** pow_denom_R
-    )
-    del phi, cos_phi, denom, R
+    t = phi - phi0
+    B.imul(t, alpha_t)              # t = alpha * (phi - phi0)
+
+    # denom = clip(cos(phi - t)); reuses phi's buffer.
+    denom = B.isub(phi, t)
+    B.icos(denom)
+    B.iclip(denom, eps, None)
+    del phi
+
+    # Assemble the sample in t's buffer: sign * sin(t) * cos-power * R-power.
+    sample = B.isin(t)
+    if sign_alpha_minus_1 < 0:
+        B.ineg(sample)
+    B.imul(cos_phi, abs_alpha1)
+    B.ipow(cos_phi, inv_alpha_neg)
+    B.imul(sample, cos_phi)
+    del cos_phi
+    R = B.exponential(scale=1.0, size=size)
+    B.iclip(R, eps, None)
+    B.idiv(denom, R)
+    del R
+    B.ipow(denom, pow_denom_R)
+    B.imul(sample, denom)
+    del denom, t
     return sample
 
 
@@ -130,7 +170,8 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
                 "Signal and kernel must have the same length for periodic convolution."
             )
         fft_signal = B.fft(signal)
-        return B.real(B.ifft(fft_signal * fft_kernel))
+        B.imul(fft_signal, fft_kernel)
+        return B.real(B.ifft(fft_signal))
 
     # Real-kernel path: use rfft/irfft.
     if kernel_is_fourier:
@@ -156,7 +197,8 @@ def periodic_convolve(signal, kernel, kernel_is_fourier=False):
         rfft_kernel = B.rfft(B.ifftshift(kernel_arr))
 
     rfft_signal = B.rfft(signal)
-    return B.irfft(rfft_signal * rfft_kernel, n=n)
+    B.imul(rfft_signal, rfft_kernel)
+    return B.irfft(rfft_signal, n=n)
 
 
 def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
@@ -193,7 +235,8 @@ def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
                 "Signal and kernel must have the same shape for periodic convolution."
             )
         fft_signal = B.fftn(signal)
-        return B.real(B.ifftn(fft_signal * fft_kernel))
+        B.imul(fft_signal, fft_kernel)
+        return B.real(B.ifftn(fft_signal))
 
     # Real-kernel path: rfftn/irfftn.
     expected_half_shape = shape[:-1] + (shape[-1] // 2 + 1,)
@@ -220,7 +263,8 @@ def periodic_convolve_nd(signal, kernel, kernel_is_fourier=False):
         rfftn_kernel = B.rfftn(B.ifftshift(kernel_arr))
 
     rfftn_signal = B.rfftn(signal)
-    return B.irfftn(rfftn_signal * rfftn_kernel, s=shape)
+    B.imul(rfftn_signal, rfftn_kernel)
+    return B.irfftn(rfftn_signal, s=shape, overwrite_input=True)
 
 
 def _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable):
@@ -484,17 +528,11 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
 
     _warn_if_naive_kernel_selected(kernel_construction_method_flux, kernel_construction_method_observable)
 
-    if levy_noise is None:
-        noise = _extremal_levy_core(alpha, size=size)
-    else:
+    if levy_noise is not None:
         levy_noise_arr = B.asarray(levy_noise)
         if B.numel(levy_noise_arr) != output_size:
             raise ValueError("Provided levy_noise must match the specified size.")
-        # if aperiodic is requested, need to pad noise with more noise
-        if not periodic:
-            noise = B.concatenate([levy_noise_arr, _extremal_levy_core(alpha, size=output_size)])
-        else:
-            noise = levy_noise_arr
+
     if outer_scale is None and outer_scale_width_factor != 2.0:
         warnings.warn(
             "outer_scale_width_factor has no effect when outer_scale is None "
@@ -522,8 +560,30 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         raise ValueError(f"Unknown kernel_construction_method_flux: {kernel_construction_method_flux}. "
                          "Supported: 'LS2010', 'naive'.")
 
-    integrated = periodic_convolve(noise, kernel1)
-    del noise, kernel1  # Clean memory
+    # Move the kernel to Fourier space before generating the noise so the
+    # real-space kernel and the noise never coexist (bounds peak memory).
+    kernel1_shifted = B.ifftshift(kernel1)
+    del kernel1
+    kernel1_fft = B.rfft(kernel1_shifted)
+    del kernel1_shifted
+
+    if levy_noise is None:
+        noise = _extremal_levy_core(alpha, size=size)
+    elif not periodic:
+        # if aperiodic is requested, need to pad noise with more noise
+        noise = B.concatenate([levy_noise_arr, _extremal_levy_core(alpha, size=output_size)])
+    else:
+        noise = levy_noise_arr
+
+    # Periodic convolution with the flux kernel (same arithmetic as
+    # periodic_convolve), spelled out so each full-size buffer is released
+    # as soon as possible.
+    spectrum = B.rfft(noise)
+    del noise
+    B.imul(spectrum, kernel1_fft)
+    del kernel1_fft
+    integrated = B.irfft(spectrum, n=size)
+    del spectrum
 
     # If causal, adjust for the fact that half the kernel is being deleted
     if causal:
@@ -531,11 +591,9 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
     else:
         causality_factor = 1.0
 
-
-    scaled = integrated * ((causality_factor * C1) ** (1/alpha))
+    B.imul(integrated, (causality_factor * C1) ** (1/alpha))
+    flux = _clip_and_exp_flux(integrated, "FIF_1D", in_place=True)
     del integrated
-    flux = _clip_and_exp_flux(scaled, "FIF_1D")
-    del scaled
 
     if H == 0:
         # Integrator is identity (H=0 after any remap). Skip the observable
@@ -569,11 +627,21 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         if causal:
             raise ValueError("Spectral observable kernels do not support causal mode. "
                              "Use kernel_construction_method_observable='LS2010' with causal=True.")
-        observable = fractional_integral_spectral(
-            flux, H, outer_scale=outer_scale,
-            odd_axes=odd_tuple_1d if has_odd else None,
-        )
+        # Same arithmetic as fractional_integral_spectral(flux, H, ...),
+        # spelled out so the flux buffer is released right after its
+        # forward FFT instead of staying alive for the whole call.
+        if outer_scale is not None and outer_scale <= 0:
+            raise ValueError(f"outer_scale must be positive; got {outer_scale}.")
+        obs_outer_scale = size if outer_scale is None else outer_scale
+        _guard_single_kernel_overflow(obs_outer_scale, H, 1)
+        riesz_kernel = _build_riesz_kernel((size,), H, obs_outer_scale,
+                                           odd_tuple_1d)
+        spectrum = B.rfft(flux)
         del flux
+        B.imul(spectrum, riesz_kernel)
+        del riesz_kernel
+        observable = B.irfft(spectrum, n=size)
+        del spectrum
     else:
         if has_odd:
             # The real-space LS2010 kernel mixes a power-law part with a
@@ -602,8 +670,18 @@ def FIF_1D(size, alpha, C1, H, levy_noise=None, causal=False, outer_scale=None,
         else:
             raise ValueError(f"Unknown kernel_construction_method_observable: {kernel_construction_method_observable}")
 
-        observable = periodic_convolve(flux, kernel2)
-        del flux, kernel2
+        # Inline periodic convolution with eager buffer release (same
+        # arithmetic as periodic_convolve).
+        kernel2_shifted = B.ifftshift(kernel2)
+        del kernel2
+        kernel2_fft = B.rfft(kernel2_shifted)
+        del kernel2_shifted
+        spectrum = B.rfft(flux)
+        del flux
+        B.imul(spectrum, kernel2_fft)
+        del kernel2_fft
+        observable = B.irfft(spectrum, n=size)
+        del spectrum
 
     if not periodic:
         observable = observable[:size//2]     # eliminate periodicity by removing the part corresponding to the appended noise
@@ -954,23 +1032,15 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
             "For non-spectral observable kernels, H must be between 0 and 1."
         )
 
-    # Generate or validate Lévy noise
-    if levy_noise is None:
-        total_size = np.prod(sim_size)
-        noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
-    else:
+    # Validate provided Lévy noise before doing any heavy work
+    if levy_noise is not None:
         levy_tensor = B.asarray(levy_noise)
         if all(periodic_tuple):
             if levy_tensor.shape != sim_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
-            noise = levy_tensor
         else:
             if levy_tensor.shape != output_size:
                 raise ValueError("Provided levy_noise must match the specified size.")
-            total_size = np.prod(sim_size)
-            noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
-            # Insert provided noise at the beginning
-            noise[tuple(slice(s) for s in output_size)] = levy_tensor
 
     # Create flux kernel (kernel 1)
     # Calculate exponent and normalization parameters for N-D flux kernel
@@ -988,18 +1058,41 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         raise ValueError(f"Unknown kernel_construction_method_flux for N-D: {kernel_construction_method_flux}. "
                          "Supported: 'LS2010'.")
 
-    # Perform first convolution
-    integrated = periodic_convolve_nd(noise, kernel1)
-    del noise, kernel1
+    # Move the kernel to Fourier space before generating the noise so the
+    # real-space kernel and the noise never coexist (bounds peak memory).
+    kernel1_shifted = B.ifftshift(kernel1)
+    del kernel1
+    kernel1_fft = B.rfftn(kernel1_shifted)
+    del kernel1_shifted
+
+    # Generate or place Lévy noise
+    if levy_noise is None:
+        total_size = np.prod(sim_size)
+        noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
+    elif all(periodic_tuple):
+        noise = levy_tensor
+    else:
+        total_size = np.prod(sim_size)
+        noise = _extremal_levy_core(alpha, size=total_size).reshape(sim_size)
+        # Insert provided noise at the beginning
+        noise[tuple(slice(s) for s in output_size)] = levy_tensor
+
+    # First convolution (same arithmetic as periodic_convolve_nd), spelled
+    # out so each full-size buffer is released as soon as possible.
+    spectrum = B.rfftn(noise)
+    del noise
+    B.imul(spectrum, kernel1_fft)
+    del kernel1_fft
+    integrated = B.irfftn(spectrum, s=sim_size, overwrite_input=True)
+    del spectrum
 
     # Causality compensates variance: with k causal axes the kernel keeps a
     # fraction 1/2^k of its mass, so the log-flux variance drops by 1/2^k.
     # Scale up by 2^k inside the C1 factor to restore the target variance.
     causality_factor = 2.0 ** n_causal_axes
-    scaled = integrated * ((causality_factor * C1) ** (1/alpha))
+    B.imul(integrated, (causality_factor * C1) ** (1/alpha))
+    flux = _clip_and_exp_flux(integrated, "FIF_ND", in_place=True)
     del integrated
-    flux = _clip_and_exp_flux(scaled, "FIF_ND")
-    del scaled
 
     if H == 0:
         if has_odd:
@@ -1025,11 +1118,21 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                 "Spectral observable kernels do not support causal mode. "
                 "Use kernel_construction_method_observable='LS2010' with causal=True."
             )
-        observable = fractional_integral_spectral(
-            flux, H, outer_scale=outer_scale,
-            odd_axes=odd_tuple if has_odd else None,
-        )
+        # Same arithmetic as fractional_integral_spectral(flux, H, ...),
+        # spelled out so the flux buffer is released right after its
+        # forward FFT instead of staying alive for the whole call.
+        if outer_scale is not None and outer_scale <= 0:
+            raise ValueError(f"outer_scale must be positive; got {outer_scale}.")
+        obs_outer_scale = max(sim_size) if outer_scale is None else outer_scale
+        _guard_single_kernel_overflow(obs_outer_scale, H, ndim)
+        riesz_kernel = _build_riesz_kernel(sim_size, H, obs_outer_scale,
+                                           odd_tuple)
+        spectrum = B.rfftn(flux)
         del flux
+        B.imul(spectrum, riesz_kernel)
+        del riesz_kernel
+        observable = B.irfftn(spectrum, s=sim_size, overwrite_input=True)
+        del spectrum
     elif kernel_construction_method_observable == 'LS2010':
         if has_odd:
             # See FIF_1D for the same restriction. Real-space sign-flipping
@@ -1047,8 +1150,18 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
                                       causal=causal_tuple, outer_scale=outer_scale,
                                       outer_scale_width_factor=outer_scale_width_factor,
                                       final_power=None, scale_metric=scale_metric)
-        observable = periodic_convolve_nd(flux, kernel2)
-        del flux, kernel2
+        # Inline periodic convolution with eager buffer release (same
+        # arithmetic as periodic_convolve_nd).
+        kernel2_shifted = B.ifftshift(kernel2)
+        del kernel2
+        kernel2_fft = B.rfftn(kernel2_shifted)
+        del kernel2_shifted
+        spectrum = B.rfftn(flux)
+        del flux
+        B.imul(spectrum, kernel2_fft)
+        del kernel2_fft
+        observable = B.irfftn(spectrum, s=sim_size, overwrite_input=True)
+        del spectrum
     else:
         raise ValueError(f"Unknown kernel_construction_method_observable for N-D: {kernel_construction_method_observable}")
 

@@ -87,9 +87,11 @@ class TestSimulationNumpy:
     @pytest.fixture(autouse=True)
     def _setup_backend(self):
         prev = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('numpy')
         si.set_numerical_precision('float64')
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_backend(prev)
 
     @pytest.mark.parametrize('case_name', SIM_CASES.keys())
@@ -113,9 +115,11 @@ class TestSimulationTorchCPU:
         if not _torch_available:
             pytest.skip("torch not available")
         prev = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('torch')
         si.set_numerical_precision('float64')
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_backend(prev)
 
     @pytest.mark.parametrize('case_name', SIM_CASES.keys())
@@ -144,12 +148,14 @@ class TestSimulationTorchGPU:
         if not _torch_available or not torch.cuda.is_available():
             pytest.skip("CUDA not available")
         prev_backend = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('torch')
         si.set_numerical_precision('float64')
         if not hasattr(si, 'set_device'):
             pytest.skip("set_device not yet implemented")
         si.set_device('cuda')
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_device('cpu')
         si.set_backend(prev_backend)
 
@@ -179,6 +185,7 @@ class TestAnalysisNumpyBackend:
     @pytest.fixture(autouse=True)
     def _setup(self, ref):
         prev = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('numpy')
         si.set_numerical_precision('float64')
         self.signal_1d = ref['np_sim_fbm_1d_circulant']
@@ -187,6 +194,7 @@ class TestAnalysisNumpyBackend:
         self.rtol = 1e-13
         self.atol = 1e-14
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_backend(prev)
 
     def test_structure_function_order1(self, ref):
@@ -278,6 +286,7 @@ class TestAnalysisTorchBackend:
         if not _torch_available:
             pytest.skip("torch not available")
         prev = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('torch')
         si.set_numerical_precision('float64')
         self.signal_1d = ref['np_sim_fbm_1d_circulant']
@@ -286,6 +295,7 @@ class TestAnalysisTorchBackend:
         self.rtol = 1e-12
         self.atol = 1e-14
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_backend(prev)
 
     def test_structure_function_order1(self, ref):
@@ -380,6 +390,7 @@ class TestAnalysisTorchGPU:
         if not hasattr(si, 'set_device'):
             pytest.skip("set_device not yet implemented")
         prev = si.get_backend()
+        prev_precision = si.get_numerical_precision()
         si.set_backend('torch')
         si.set_numerical_precision('float64')
         si.set_device('cuda')
@@ -389,6 +400,7 @@ class TestAnalysisTorchGPU:
         self.rtol = 1e-10
         self.atol = 1e-12
         yield
+        si.set_numerical_precision(prev_precision)
         si.set_device('cpu')
         si.set_backend(prev)
 

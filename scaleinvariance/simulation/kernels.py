@@ -46,24 +46,26 @@ def _apply_outer_scale(kernel, distance, outer_scale, width_factor=2.0):
     ndarray
         Kernel with outer scale applied
     """
+    # NOTE: ``distance`` is consumed (mutated in place) — callers pass a
+    # temporary. The in-place chain below performs exactly the arithmetic of
+    # the old expression `kernel * 0.5*(1+cos(pi*clip((d-lo)/w, 0, 1)))`,
+    # without allocating window/normalized-distance buffers.
     distance = B.asarray(distance)
 
     # Transition region centered at outer_scale with width = outer_scale * width_factor
     transition_width = outer_scale * width_factor
     lower_edge = outer_scale - transition_width / 2.0
-    upper_edge = outer_scale + transition_width / 2.0
 
-    # Compute normalized distance: 0 at lower_edge, 1 at upper_edge
-    # Clamp to [0, 1] so values below lower_edge → 0, above upper_edge → 1
-    normalized_dist = B.clip((distance - lower_edge) / transition_width, 0.0, 1.0)
+    window = distance
+    B.isub(window, lower_edge)
+    B.idiv(window, transition_width)
+    B.iclip(window, 0.0, 1.0)
+    B.imul(window, B.pi)
+    B.icos(window)
+    B.iadd(window, 1.0)
+    B.imul(window, 0.5)
 
-    # Hanning window: 1 when normalized_dist=0, 0 when normalized_dist=1
-    window = 0.5 * (1.0 + B.cos(B.pi * normalized_dist))
-    del normalized_dist
-
-    result = kernel * window
-    del window
-    return result
+    return B.imul(kernel, window)
 
 # LS 2010 kernels
 
@@ -111,36 +113,46 @@ def _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_powe
     cutoff_length2 = cutoff_length / ratio
 
     # Base singularity kernel (kept live; everything else below is temporary).
+    # All in-place chains below reproduce the previous out-of-place
+    # expressions operation-for-operation (bit-identical results) while
+    # holding at most two full-volume temporaries alongside base_kernel.
     base_kernel = distance ** exponent
 
-    # First normalization constant — use exp cutoff then drop the smoothed
-    # copy immediately so we never hold two full-volume copies at peak.
-    exp_cutoff1 = B.exp(B.clip(-(distance / cutoff_length) ** 4, -200, 0))
-    smoothed = base_kernel * exp_cutoff1
-    del exp_cutoff1
-    norm_constant1 = B.sum(smoothed)
-    del smoothed
+    def _smoothed_sum(cutoff):
+        # sum(base_kernel * exp(clip(-(distance/cutoff)**4, -200, 0)))
+        t = distance / cutoff
+        B.ipow(t, 4)
+        B.ineg(t)
+        B.iclip(t, -200, 0)
+        B.iexp(t)
+        B.imul(t, base_kernel)
+        return B.sum(t)
 
-    # Second normalization constant (narrower cutoff).
-    exp_cutoff2 = B.exp(B.clip(-(distance / cutoff_length2) ** 4, -200, 0))
-    smoothed = base_kernel * exp_cutoff2
-    del exp_cutoff2
-    norm_constant2 = B.sum(smoothed)
-    del smoothed
+    norm_constant1 = _smoothed_sum(cutoff_length)
+    norm_constant2 = _smoothed_sum(cutoff_length2)
 
     ratio_factor = ratio ** norm_ratio_exponent
     normalization_factor = (ratio_factor * norm_constant1 - norm_constant2) / (ratio_factor - 1)
 
-    # Final smoothing filter; reused once more for the correction below.
-    final_filter = B.exp(B.clip(-distance / 3.0, -200, 0))
-    filter_integral = B.sum(base_kernel * final_filter)
+    # Final smoothing filter: exp(clip(-distance/3, -200, 0)).
+    final_filter = distance / 3.0
+    B.ineg(final_filter)
+    B.iclip(final_filter, -200, 0)
+    B.iexp(final_filter)
 
+    smoothed = base_kernel * final_filter
+    filter_integral = B.sum(smoothed)
+    del smoothed
+
+    # corrected = base_kernel * (1 + correction_factor * final_filter)
     correction_factor = -normalization_factor / filter_integral
-    corrected_kernel = base_kernel * (1 + correction_factor * final_filter)
+    B.imul(final_filter, correction_factor)
+    B.iadd(final_filter, 1)
+    corrected_kernel = B.imul(final_filter, base_kernel)
     del final_filter, base_kernel
 
     if final_power is not None:
-        corrected_kernel = corrected_kernel ** final_power
+        B.ipow(corrected_kernel, final_power)
 
     return corrected_kernel
 
@@ -218,12 +230,18 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
                 term = axis.reshape(broadcast_shape) ** 2
                 dist_sq = term if dist_sq is None else dist_sq + term
                 del term
-            distance = B.sqrt(dist_sq)
+            distance = B.isqrt(dist_sq)
             del dist_sq
     else:
         if ndim == 1:
             raise ValueError("scale_metric is not supported for 1D kernels.")
         distance = scale_metric
+
+    # The coordinate arrays are only needed again for causal masking. In 1D
+    # the coordinate array is itself full-size, so release it now unless a
+    # causal mask will need it.
+    if not any(causal_tuple):
+        coord_arrays = None
 
     kernel = _apply_LS2010_correction(distance, exponent, norm_ratio_exponent, final_power)
 
@@ -241,7 +259,7 @@ def create_kernel_LS2010(size, exponent, norm_ratio_exponent, causal=False, oute
         mask_1d = (B.sign(coord) + 1) / 2
         broadcast_shape = [1] * ndim
         broadcast_shape[axis_idx] = coord.shape[0]
-        kernel = kernel * mask_1d.reshape(broadcast_shape)
+        kernel = B.imul(kernel, mask_1d.reshape(broadcast_shape))
 
     return kernel
 
