@@ -7,7 +7,7 @@ This package provides tools for:
 - Fractional Brownian motion simulation
 """
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 __author__ = "Thomas DeWitt"
 
 from . import backend
@@ -21,6 +21,7 @@ from . import analysis, simulation
 from .analysis import (
     structure_function, structure_function_hurst, costructure_function,
     haar_fluctuation, haar_fluctuation_hurst,
+    wavelet_fluctuation, wavelet_fluctuation_hurst, WAVELETS, get_wavelet,
     power_spectrum_binned, spectral_hurst,
     K_analytic, K_empirical, two_point_C1,
     # Deprecated aliases

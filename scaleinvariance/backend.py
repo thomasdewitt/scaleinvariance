@@ -911,7 +911,10 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False, circular=False):
     signal : array
         Input signal (N-D).
     kernel : 1-D array
-        Convolution kernel.
+        Convolution kernel. May be real or complex. A complex kernel (with a
+        non-zero imaginary part) is convolved via a full complex FFT and the
+        result is complex; a real kernel uses the cheaper rfft path and the
+        result is real. The choice is made automatically from the kernel.
     axis : int
         Axis of *signal* along which to convolve.
     nan_safe : bool
@@ -935,19 +938,36 @@ def convolve1d(signal, kernel, axis=-1, nan_safe=False, circular=False):
     """
     if len(kernel) == 0:
         raise ValueError("kernel cannot be empty")
+    # Decide rfft vs fft from the kernel alone. The signal is always real
+    # here, so a real kernel (or a complex-typed kernel that happens to be
+    # purely real) stays on the cheaper rfft path and returns a real result;
+    # a genuinely complex kernel (e.g. an analytic Morlet wavelet) needs a
+    # full complex FFT and returns a complex result. Callers that want a
+    # magnitude just take abs() of the result either way.
+    use_complex = iscomplexobj(kernel) and bool(any(imag(kernel) != 0))
+    # A complex-typed but purely-real kernel takes the rfft path, but rfft
+    # rejects a complex dtype outright -- drop the (zero) imaginary part so the
+    # real path actually receives a real array.
+    if iscomplexobj(kernel) and not use_complex:
+        kernel = real(kernel)
     if circular:
         if nan_safe:
-            return _convolve1d_fft_circular_nan_safe(signal, kernel, axis)
-        return _convolve1d_fft_circular(signal, kernel, axis)
+            return _convolve1d_fft_circular_nan_safe(signal, kernel, axis, use_complex)
+        return _convolve1d_fft_circular(signal, kernel, axis, use_complex)
     if nan_safe:
         if _backend == 'torch':
-            return _convolve1d_fft_nan_safe(signal, kernel, axis)
-        return _convolve1d_direct(signal, kernel, axis)
-    return _convolve1d_fft(signal, kernel, axis)
+            return _convolve1d_fft_nan_safe(signal, kernel, axis, use_complex)
+        return _convolve1d_direct(signal, kernel, axis)  # scipy handles complex kernels
+    return _convolve1d_fft(signal, kernel, axis, use_complex)
 
 
-def _convolve1d_fft(signal, kernel, axis):
-    """FFT-based aperiodic convolution, mode='valid'."""
+def _convolve1d_fft(signal, kernel, axis, use_complex=False):
+    """FFT-based aperiodic convolution, mode='valid'.
+
+    With ``use_complex=True`` the (complex) kernel is convolved via a full
+    complex FFT and a complex result is returned; otherwise the real rfft
+    path is used (bit-identical to the original real-only implementation).
+    """
     n_sig = signal.shape[axis]
     n_ker = len(kernel)
     if n_ker > n_sig:
@@ -972,11 +992,18 @@ def _convolve1d_fft(signal, kernel, axis):
     kernel_padded = pad(kernel_nd, 0, n_fft - n_ker, axis=axis)
 
     # FFT, multiply, IFFT
-    sig_fft = rfft(sig_padded, axis=axis)
-    ker_fft = rfft(kernel_padded, axis=axis)
-    product = sig_fft * ker_fft
-    del sig_fft, ker_fft, sig_padded, kernel_padded
-    conv_full = irfft(product, n=n_fft, axis=axis)
+    if use_complex:
+        sig_fft = fft(sig_padded, axis=axis)
+        ker_fft = fft(kernel_padded, axis=axis)
+        product = sig_fft * ker_fft
+        del sig_fft, ker_fft, sig_padded, kernel_padded
+        conv_full = ifft(product, axis=axis)
+    else:
+        sig_fft = rfft(sig_padded, axis=axis)
+        ker_fft = rfft(kernel_padded, axis=axis)
+        product = sig_fft * ker_fft
+        del sig_fft, ker_fft, sig_padded, kernel_padded
+        conv_full = irfft(product, n=n_fft, axis=axis)
     del product
 
     # Extract valid region
@@ -985,7 +1012,7 @@ def _convolve1d_fft(signal, kernel, axis):
     return conv_full[tuple(slices)]
 
 
-def _convolve1d_fft_nan_safe(signal, kernel, axis):
+def _convolve1d_fft_nan_safe(signal, kernel, axis, use_complex=False):
     """FFT-based NaN-safe aperiodic convolution, mode='valid'.
 
     Matches the semantics of :func:`_convolve1d_direct` — any NaN inside a
@@ -1024,7 +1051,7 @@ def _convolve1d_fft_nan_safe(signal, kernel, axis):
         clean = np.where(nan_mask, np.asarray(0, dtype=sig_t.dtype), sig_t)
         valid = (~nan_mask).astype(np.int64)
 
-    result = _convolve1d_fft(clean, kernel, axis)
+    result = _convolve1d_fft(clean, kernel, axis, use_complex)
 
     # valid_count[i] = sum(valid[i:i+n_ker]) via prepend-zero cumsum
     padded = pad(valid, 1, 0, axis=ax)
@@ -1062,7 +1089,7 @@ def _convolve1d_direct(signal, kernel, axis):
     return result
 
 
-def _convolve1d_fft_circular(signal, kernel, axis):
+def _convolve1d_fft_circular(signal, kernel, axis, use_complex=False):
     """FFT-based circular (periodic) convolution along *axis*.
 
     The signal and the zero-padded kernel are both transformed at the
@@ -1089,12 +1116,14 @@ def _convolve1d_fft_circular(signal, kernel, axis):
         kernel_nd = _to_torch(kernel).reshape(kernel_shape)
     kernel_padded = pad(kernel_nd, 0, n_sig - n_ker, axis=ax)
 
+    if use_complex:
+        return ifft(fft(sig, axis=ax) * fft(kernel_padded, axis=ax), axis=ax)
     sig_fft = rfft(sig, axis=ax)
     ker_fft = rfft(kernel_padded, axis=ax)
     return irfft(sig_fft * ker_fft, n=n_sig, axis=ax)
 
 
-def _convolve1d_fft_circular_nan_safe(signal, kernel, axis):
+def _convolve1d_fft_circular_nan_safe(signal, kernel, axis, use_complex=False):
     """FFT-based NaN-safe circular convolution along *axis*.
 
     The periodic analogue of :func:`_convolve1d_fft_nan_safe`: any NaN
@@ -1130,7 +1159,7 @@ def _convolve1d_fft_circular_nan_safe(signal, kernel, axis):
         clean = np.where(nan_mask, np.asarray(0, dtype=sig.dtype), sig)
         valid = (~nan_mask).astype(np.int64)
 
-    result = _convolve1d_fft_circular(clean, kernel, ax)
+    result = _convolve1d_fft_circular(clean, kernel, ax, use_complex)
 
     # Wrap-aware valid count per length-n_ker circular window.
     pre_slice = [slice(None)] * sig.ndim

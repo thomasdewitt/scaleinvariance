@@ -57,6 +57,8 @@ Hurst Estimation
 
 .. autofunction:: scaleinvariance.haar_fluctuation_hurst
 
+.. autofunction:: scaleinvariance.wavelet_fluctuation_hurst
+
 .. autofunction:: scaleinvariance.structure_function_hurst
 
 .. autofunction:: scaleinvariance.spectral_hurst
@@ -71,7 +73,12 @@ Structure Functions
 Analysis Functions
 ~~~~~~~~~~~~~~~~~~
 
-.. automodule:: scaleinvariance.analysis.haar_fluctuation
+.. autofunction:: scaleinvariance.wavelet_fluctuation
+
+.. automodule:: scaleinvariance.analysis.wavelet_fluctuation
+   :members:
+
+.. automodule:: scaleinvariance.analysis.wavelets
    :members:
 
 .. automodule:: scaleinvariance.analysis.structure_function

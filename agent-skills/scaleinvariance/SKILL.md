@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.12.0**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.13.0**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -46,6 +46,7 @@ If you are attempting to analyze a large dataset that does not fit in memory, yo
 | ------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Recommended** cases when 0<H<1            | `structure_function_hurst` | First-order structure function scaling, robust                                                                              |
 | Wavelet-based alternative, works for -1<H<1 | `haar_fluctuation_hurst`   | Uses Haar wavelet convolution, first order                                                                                  |
+| General wavelet (choose `wavelet=`), higher H | `wavelet_fluctuation_hurst` | 'haar', 'structure_function', 'mexican_hat', 'morlet'; Mexican hat/Morlet reach higher H. Haar is the default |
 | Spectral method, works for all H            | `spectral_hurst`           | Uses power spectrum β = 2H + 1, uses second-order statistics so will not be equivalent to the above for multifractal fields |
 
 All three methods estimate the same H parameter but may give slightly different results. Structure function is recommended for most cases.
@@ -58,6 +59,7 @@ All three methods estimate the same H parameter but may give slightly different 
 | ---------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
 | Structure function values                      | `structure_function`    | Returns lags and S_n(r) values. `order` accepts scalar or 1-D array (vectorized over orders). |
 | Haar fluctuation values                        | `haar_fluctuation`      | Returns lags and fluctuation values. `order` accepts scalar or 1-D array.                     |
+| General wavelet fluctuation values             | `wavelet_fluctuation`   | `wavelet=`: 'haar', 'structure_function', 'mexican_hat', 'morlet'. `order` scalar or 1-D array. |
 | Mixed (two-field, two-exponent) structure fn   | `costructure_function`  | S_{p,q}(r) = <\|delta f1\|^p * \|delta f2\|^q>. Both orders accept scalar or 1-D array.      |
 | Power spectral density                         | `power_spectrum_binned` | Returns binned frequencies and PSD                                                            |
 
@@ -129,6 +131,18 @@ scaleinvariance.haar_fluctuation_hurst(
 ```
 
 ```python
+scaleinvariance.wavelet_fluctuation_hurst(
+    data,               # N-dimensional array
+    wavelet='haar',     # 'haar' | 'structure_function' | 'mexican_hat' | 'morlet'
+    min_sep=None,       # Min lag for fit
+    max_sep=None,       # Max lag for fit
+    axis=0,             # Axis along which to compute
+    return_fit=False,   # If True, also return lags, values, fit_line
+    periodic=False      # Periodic (toroidal) domain
+) -> (H, uncertainty) | (H, uncertainty, lags, values, fit_line)
+```
+
+```python
 scaleinvariance.spectral_hurst(
     data,                    # N-dimensional array
     max_wavelength=None,     # Max wavelength for fit (default: size/8 or size)
@@ -170,6 +184,42 @@ scaleinvariance.haar_fluctuation(
 ```
 
 ```python
+scaleinvariance.wavelet_fluctuation(
+    data,                    # N-dimensional array
+    wavelet='haar',          # 'haar' | 'structure_function' | 'mexican_hat' | 'morlet'
+    order=1,                 # Scalar or 1-D array of positive orders. Array input
+                             # reuses the |g_r * data| convolution across orders.
+    max_sep=None,            # Maximum lag to compute
+    axis=0,                  # Axis along which to compute
+    lags='powers of 1.2',    # 'all', 'powers of X', or array of lags
+    nan_behavior='raise',    # 'raise' or 'ignore'
+    periodic=False           # Periodic (toroidal) domain
+) -> (lags, values)
+# values.shape: (n_lags,) for scalar order, (n_orders, n_lags) for array order.
+# F_q(r) = <|g_r * data|^q> ~ r^{qH-K(q)}. 'haar' == haar_fluctuation exactly;
+# 'structure_function' == structure_function (the dedicated funcs are faster).
+# Lags whose (wide) kernel exceeds the domain are returned as NaN.
+```
+
+**Wavelets** (`scaleinvariance.WAVELETS`): all kernels are L1-normalized
+(`sum|g_r|` fixed across scales, mean removed) so the fluctuation scales as
+`r^H` — same slope for every wavelet, different amplitude.
+- `haar` — difference of the means of a width-`r` window's two halves. 1
+  vanishing moment (~ `0<H<1`). Even lags only.
+- `structure_function` — the first-difference "poor man's wavelet"
+  `f(x+r)-f(x)`. Reproduces `structure_function` (the dedicated function is the
+  faster path).
+- `mexican_hat` — Ricker (2nd derivative of a Gaussian), 2 vanishing moments
+  (resolves H up to ~2). `sigma = r/sqrt(3)` (lag = peak-to-trough), cut at
+  `±5 sigma`.
+- `morlet` — complex Morlet, `omega0=6`; the fluctuation is the modulus
+  `|psi * data|` (phase-invariant, smoother). `sigma = 6 r / pi`, cut at
+  `±4 sigma`. Frequency-localized.
+
+Localized wavelets have kernels several times wider than `r` (`~5.8 r` Mexican
+hat, `~15 r` Morlet), so their largest reachable lag is correspondingly smaller.
+
+```python
 scaleinvariance.costructure_function(
     data1, data2,            # N-dimensional arrays. Must have identical shape.
     order1=1,                # Scalar or 1-D array of positive orders for |delta f1|.
@@ -190,8 +240,8 @@ scaleinvariance.costructure_function(
 ```
 
 **Periodic (toroidal) domain** — `structure_function`, `costructure_function`,
-`haar_fluctuation` (and the `*_hurst` wrappers, `K_empirical`, `two_point_C1`)
-accept `periodic=True`. Increments / Haar windows then wrap around the array
+`haar_fluctuation`, `wavelet_fluctuation` (and the `*_hurst` wrappers,
+`K_empirical`, `two_point_C1`) accept `periodic=True`. Increments / Haar windows then wrap around the array
 end along `axis`, so every lag uses all `L` samples instead of dropping the
 `L - r` edge pairs — the correct choice for data on a periodic domain (e.g. the
 output of the `periodic=True` simulators). For the structure function
@@ -218,11 +268,12 @@ scaleinvariance.two_point_C1(
     data,                           # N-dimensional array
     order=2,                        # Second order for exponent (default: 2)
     assumed_alpha=2.0,              # Levy stability parameter (default: Gaussian)
-    scaling_method='structure_function',  # or 'haar_fluctuation'
+    scaling_method='structure_function',  # 'structure_function' | 'haar_fluctuation' | 'wavelet_fluctuation'
     min_sep=None,                   # Min separation for scaling
     max_sep=None,                   # Max separation for scaling
     axis=0,                         # Axis along which to compute
-    periodic=False                  # Periodic (toroidal) domain
+    periodic=False,                 # Periodic (toroidal) domain
+    wavelet=None                    # Wavelet name; ONLY with scaling_method='wavelet_fluctuation' (else raises)
 ) -> (C1, uncertainty)   # NOTE: uncertainty from error propagation is approximate
 ```
 
@@ -238,13 +289,14 @@ scaleinvariance.K_analytic(
 scaleinvariance.K_empirical(
     data,                           # N-dimensional array
     q_values=None,                  # Moment orders (default: 0.1 to 2.5 by 0.1)
-    scaling_method='structure_function',  # or 'haar_fluctuation'
+    scaling_method='structure_function',  # 'structure_function' | 'haar_fluctuation' | 'wavelet_fluctuation'
     hurst_fit_method='fixed',       # 'fixed' or 'joint'
     min_sep=None,                   # Min lag for scaling fits
     max_sep=None,                   # Max lag for scaling fits
     axis=0,                         # Axis along which to compute
-    nan_behavior='raise',           # 'raise' or 'ignore' (haar_fluctuation only)
-    periodic=False                  # Periodic (toroidal) domain
+    nan_behavior='raise',           # 'raise' or 'ignore' (fluctuation methods only)
+    periodic=False,                 # Periodic (toroidal) domain
+    wavelet=None                    # Wavelet name; ONLY with scaling_method='wavelet_fluctuation' (else raises)
 ) -> (q_values, K_values, H_fit, C1_fit, alpha_fit)
 ```
 

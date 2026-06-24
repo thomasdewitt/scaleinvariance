@@ -3,7 +3,7 @@ from scipy.optimize import curve_fit
 
 from .. import backend as B
 from .structure_function import structure_function
-from .haar_fluctuation import haar_fluctuation
+from .wavelet_fluctuation import haar_fluctuation, wavelet_fluctuation
 from ..utils import estimate_hurst_from_scaling
 
 
@@ -32,9 +32,38 @@ def K_analytic(q, C1, alpha):
     return (C1 / (alpha - 1)) * (q**alpha - q)
 
 
+def _resolve_scaling_method(scaling_method, wavelet, periodic,
+                            include_nan_behavior, nan_behavior='raise'):
+    """Map (scaling_method, wavelet) to an analysis function and its kwargs.
+
+    Enforces that ``wavelet`` is only meaningful with
+    ``scaling_method='wavelet_fluctuation'``.
+    """
+    if wavelet is not None and scaling_method != 'wavelet_fluctuation':
+        raise ValueError(
+            "`wavelet` is only valid with scaling_method='wavelet_fluctuation'; "
+            f"got scaling_method='{scaling_method}'.")
+    if scaling_method == 'structure_function':
+        return structure_function, {'periodic': periodic}
+    if scaling_method == 'haar_fluctuation':
+        kw = {'periodic': periodic}
+        if include_nan_behavior:
+            kw['nan_behavior'] = nan_behavior
+        return haar_fluctuation, kw
+    if scaling_method == 'wavelet_fluctuation':
+        kw = {'wavelet': wavelet if wavelet is not None else 'haar',
+              'periodic': periodic}
+        if include_nan_behavior:
+            kw['nan_behavior'] = nan_behavior
+        return wavelet_fluctuation, kw
+    raise ValueError(
+        f"Unknown scaling_method: '{scaling_method}'. Use 'structure_function', "
+        "'haar_fluctuation', or 'wavelet_fluctuation'.")
+
+
 def K_empirical(data, q_values=None, scaling_method='structure_function',
                 hurst_fit_method='fixed', min_sep=None, max_sep=None, axis=0,
-                nan_behavior='raise', periodic=False):
+                nan_behavior='raise', periodic=False, wavelet=None):
     """
     Estimate the multifractal K(q) scaling function empirically.
 
@@ -58,7 +87,13 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
     q_values : array-like, optional
         Moment orders at which to evaluate K(q). Default: np.arange(0.1, 2.51, 0.1).
     scaling_method : str, optional
-        'structure_function' (default) or 'haar_fluctuation'.
+        'structure_function' (default), 'haar_fluctuation', or
+        'wavelet_fluctuation'. The last uses the general wavelet path; choose
+        the wavelet with the `wavelet` argument.
+    wavelet : str or Wavelet, optional
+        Wavelet to use when scaling_method='wavelet_fluctuation' (default
+        'haar' in that case). Passing it with any other scaling_method raises.
+        See `scaleinvariance.analysis.wavelets.WAVELETS`.
     hurst_fit_method : str, optional
         'fixed' (default): H from order-1 scaling, fit C1 and alpha only.
         'joint': H, C1, and alpha all free in a joint fit to zeta(q).
@@ -99,14 +134,9 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
             f"(fits {n_params} parameters); got {len(q_values)}."
         )
 
-    if scaling_method == 'structure_function':
-        analysis_kwargs = {'periodic': periodic}
-        analysis_func = structure_function
-    elif scaling_method == 'haar_fluctuation':
-        analysis_kwargs = {'nan_behavior': nan_behavior, 'periodic': periodic}
-        analysis_func = haar_fluctuation
-    else:
-        raise ValueError(f"Unknown scaling_method: '{scaling_method}'. Use 'structure_function' or 'haar_fluctuation'")
+    analysis_func, analysis_kwargs = _resolve_scaling_method(
+        scaling_method, wavelet, periodic, include_nan_behavior=True,
+        nan_behavior=nan_behavior)
 
     all_orders = np.concatenate([[1.0], q_values.astype(np.float64)])
     lags, all_values = analysis_func(data, order=all_orders, max_sep=max_sep,
@@ -140,7 +170,7 @@ def K_empirical(data, q_values=None, scaling_method='structure_function',
 
 
 def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_function',
-                 min_sep=None, max_sep=None, axis=0, periodic=False):
+                 min_sep=None, max_sep=None, axis=0, periodic=False, wavelet=None):
     """
     Calculate the intermittency parameter C1 from multifractal scaling.
 
@@ -162,6 +192,10 @@ def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_fun
         Method for calculating scaling exponents. Options:
         - 'structure_function' (default)
         - 'haar_fluctuation'
+        - 'wavelet_fluctuation' (choose the wavelet via `wavelet`)
+    wavelet : str or Wavelet, optional
+        Wavelet to use when scaling_method='wavelet_fluctuation' (default
+        'haar' in that case). Passing it with any other scaling_method raises.
     min_sep : int, optional
         Minimum separation for scaling analysis.
     max_sep : int, optional
@@ -185,17 +219,13 @@ def two_point_C1(data, order=2, assumed_alpha=2.0, scaling_method='structure_fun
     if assumed_alpha == 1:
         raise ValueError("assumed_alpha=1 is singular in two_point_C1")
 
-    # Select analysis function
-    if scaling_method == 'structure_function':
-        analysis_func = structure_function
-    elif scaling_method == 'haar_fluctuation':
-        analysis_func = haar_fluctuation
-    else:
-        raise ValueError(f"Unknown scaling_method: {scaling_method}. Use 'structure_function' or 'haar_fluctuation'")
+    # Select analysis function (enforces wavelet only with wavelet_fluctuation)
+    analysis_func, analysis_kwargs = _resolve_scaling_method(
+        scaling_method, wavelet, periodic, include_nan_behavior=False)
 
     # Calculate scaling exponents for order 1 and q in one vectorized call
-    lags, values = analysis_func(data, order=[1.0, float(order)], max_sep=max_sep, axis=axis,
-                                 periodic=periodic)
+    lags, values = analysis_func(data, order=[1.0, float(order)], max_sep=max_sep,
+                                 axis=axis, **analysis_kwargs)
     xi_1, sigma_1 = estimate_hurst_from_scaling(lags, values[0], min_sep, max_sep, return_fit=False)
     xi_q, sigma_q = estimate_hurst_from_scaling(lags, values[1], min_sep, max_sep, return_fit=False)
 
