@@ -34,6 +34,17 @@ wider than its nominal scale (``~5.8 r`` for the Mexican hat, ``~15 r`` for the
 Morlet). A lag whose kernel would exceed the domain cannot be evaluated and is
 returned as NaN by ``wavelet_fluctuation`` -- the largest reachable lag is
 correspondingly smaller for the wider wavelets.
+
+The same kernel width governs NaN contamination under
+``nan_behavior='ignore'``: an output position is NaN whenever its full kernel
+window contains any NaN, so a single NaN poisons a span as wide as the kernel
+(``~r`` for Haar / structure function, ``~5.8 r`` / ``~15 r`` for the localized
+wavelets). The structure-function wavelet would therefore be stricter under NaN
+than the dedicated ``structure_function``: the mask counts the whole
+width-``r+1`` window, including the zero taps between the two ``+/-1``
+endpoints, whereas the dedicated increment only needs the two endpoints finite.
+Because of this, ``wavelet_fluctuation`` auto-delegates to ``structure_function``
+(with a warning) when the data contain NaNs and ``wavelet='structure_function'``.
 """
 
 from dataclasses import dataclass

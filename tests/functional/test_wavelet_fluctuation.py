@@ -12,6 +12,8 @@ run against a pre-refactor baseline at commit time and then removed -- there is
 deliberately no regression data in git.)
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -172,3 +174,118 @@ def test_wavelet_with_wrong_scaling_method_raises(func):
     fn = getattr(si, func)
     with pytest.raises(ValueError, match='wavelet'):
         fn(x, scaling_method='structure_function', wavelet='morlet')
+
+
+def _vals_at(lags, vals, common):
+    """Fluctuation/SF values (last axis = lag) restricted to the lags in `common`."""
+    mask = np.isin(np.asarray(lags), common)
+    return np.asarray(vals)[..., mask]
+
+
+@pytest.mark.parametrize('lags', ['powers of 1.2', 'all'])
+@pytest.mark.parametrize('periodic', [False, True])
+@pytest.mark.parametrize('order', [1.0, 2.5, [1.0, 2.0, 3.0]])
+def test_structure_function_wavelet_delegates_to_sf_on_nan(order, periodic, lags):
+    """With NaNs present, wavelet='structure_function' must produce EXACTLY the
+    dedicated structure_function result (values incl. NaN positions, on the
+    shared lags) and emit a UserWarning. Swept over scalar/array order,
+    periodic on/off, and two lag specs."""
+    si.set_backend('numpy')
+    si.set_numerical_precision('float64')
+    rng = np.random.default_rng(0)
+    x = si.fBm_1D_circulant(2048, H=0.4).astype(np.float64)
+    xn = x.copy()
+    # Interior NaNs only (never an endpoint of any compared lag): exactly the
+    # pairs the wavelet path's full-window mask would needlessly drop but the
+    # dedicated increment keeps. So matching is a real test of the delegation,
+    # not of two identically-strict paths.
+    idx = rng.choice(np.arange(5, x.size - 5), size=25, replace=False)
+    xn[idx] = np.nan
+    assert np.isnan(xn).any()
+
+    with pytest.warns(UserWarning, match='Delegating to structure_function'):
+        lw, vw = si.wavelet_fluctuation(xn, wavelet='structure_function',
+                                        order=order, lags=lags,
+                                        periodic=periodic, nan_behavior='ignore')
+
+    # The dedicated function called the ordinary public way (its own lag
+    # resolution) -- a genuine func-vs-func comparison, not self-comparison.
+    ls, vs = si.structure_function(xn, order=order, lags=lags, periodic=periodic)
+
+    common = np.intersect1d(lw, ls)
+    assert common.size > 5
+    np.testing.assert_array_equal(_vals_at(lw, vw, common),
+                                  _vals_at(ls, vs, common))
+    # Guard against a degenerate all-NaN "match".
+    assert np.isfinite(_vals_at(lw, vw, common)).any()
+
+
+def test_structure_function_wavelet_delegation_respects_axis():
+    """Delegation carries axis= through on N-D data (NaNs in a subset of rows)."""
+    si.set_backend('numpy')
+    si.set_numerical_precision('float64')
+    rng = np.random.default_rng(1)
+    data = np.stack([si.fBm_1D_circulant(2048, H=0.4) for _ in range(6)],
+                    axis=0).astype(np.float64)
+    data[2, rng.integers(5, 2043, 20)] = np.nan
+    data[4, rng.integers(5, 2043, 20)] = np.nan
+
+    with pytest.warns(UserWarning, match='Delegating to structure_function'):
+        lw, vw = si.wavelet_fluctuation(data, wavelet='structure_function',
+                                        order=[1.0, 2.0], axis=1,
+                                        nan_behavior='ignore')
+    ls, vs = si.structure_function(data, order=[1.0, 2.0], axis=1)
+    common = np.intersect1d(lw, ls)
+    np.testing.assert_array_equal(_vals_at(lw, vw, common),
+                                  _vals_at(ls, vs, common))
+
+
+@pytest.mark.parametrize('wavelet', ['haar', 'mexican_hat', 'morlet'])
+def test_other_wavelets_do_not_delegate_on_nan(wavelet):
+    """Only 'structure_function' delegates; the others keep their (correct)
+    wide-window NaN-safe behavior and emit no delegation warning."""
+    si.set_backend('numpy')
+    si.set_numerical_precision('float64')
+    rng = np.random.default_rng(2)
+    x = si.fBm_1D_circulant(2048, H=0.4).astype(np.float64)
+    x[rng.integers(5, 2043, 25)] = np.nan
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        si.wavelet_fluctuation(x, wavelet=wavelet, order=1, nan_behavior='ignore')
+    assert not any('Delegating to structure_function' in str(w.message) for w in rec)
+
+
+def test_structure_function_wavelet_delegation_faithful_oversized_periodic_lags():
+    """Explicit periodic lags >= L are unreachable (NaN) in the clean wavelet
+    path; the NaN-delegated path must reinstate NaN there too rather than emit
+    the finite wraparound aliases structure_function would compute. Also pins
+    that the returned lags are int64 regardless of the caller's lag dtype."""
+    si.set_backend('numpy')
+    si.set_numerical_precision('float64')
+    L = 512
+    x = si.fBm_1D_circulant(L, H=0.4).astype(np.float64)
+    lags_req = np.array([4, 16, L, L + 3], dtype=np.int32)  # last two unreachable
+
+    lc, vc = si.wavelet_fluctuation(x, wavelet='structure_function',
+                                    lags=lags_req, periodic=True)
+    xn = x.copy()
+    xn[7] = np.nan  # interior NaN -> triggers delegation
+    with pytest.warns(UserWarning, match='Delegating to structure_function'):
+        ld, vd = si.wavelet_fluctuation(xn, wavelet='structure_function',
+                                        lags=lags_req, periodic=True,
+                                        nan_behavior='ignore')
+
+    np.testing.assert_array_equal(lc, ld)
+    assert ld.dtype == np.int64                 # matches wavelet path, not int32
+    assert np.isnan(vc[2]) and np.isnan(vc[3])  # clean path: unreachable -> NaN
+    assert np.isnan(vd[2]) and np.isnan(vd[3])  # delegated path: same, not aliases
+    assert np.isfinite(vd[0]) and np.isfinite(vd[1])
+
+
+def test_structure_function_wavelet_nan_raise_still_raises():
+    """Delegation must not bypass nan_behavior='raise' (the default)."""
+    si.set_backend('numpy')
+    x = si.fBm_1D_circulant(2048, H=0.4).astype(np.float64)
+    x[100] = np.nan
+    with pytest.raises(ValueError, match='NaN'):
+        si.wavelet_fluctuation(x, wavelet='structure_function', order=1)

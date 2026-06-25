@@ -4,6 +4,7 @@ import numpy as np
 
 from .. import backend as B
 from ..utils import process_lags, estimate_hurst_from_scaling
+from .structure_function import structure_function
 from .wavelets import get_wavelet
 
 
@@ -51,7 +52,27 @@ def wavelet_fluctuation(data, wavelet='haar', order=1, max_sep=None, axis=0,
         wavelets (Haar) keep only even lags.
     nan_behavior : str, optional
         'raise' (default) errors on NaN input; 'ignore' propagates NaN through
-        a NaN-safe convolution (a window containing any NaN yields NaN there).
+        a NaN-safe convolution (a window containing any NaN yields NaN there),
+        then the moment is a ``nanmean`` over the surviving positions. The rule
+        is identical for every wavelet (and bit-identical to the old
+        ``haar_fluctuation``), but two consequences follow from the kernel
+        widths (see `wavelets`):
+
+        - A single NaN poisons a span as wide as the kernel: ``~r`` for 'haar'
+          / 'structure_function', but ``~5.8 r`` (Mexican hat) and ``~15 r``
+          (Morlet). Gappy data therefore loses far more output to the localized
+          wavelets at the same lag, and large lags can go entirely NaN before
+          ``r`` approaches the domain length.
+        - ``wavelet='structure_function'`` would be *stricter* under NaN than
+          the dedicated `structure_function`: the validity mask counts the full
+          width-``r+1`` window (including the zero taps between the two ``+/-1``
+          endpoints), so an interior NaN would poison the output even though it
+          is multiplied by zero. To avoid silently discarding those pairs, when
+          NaNs are present this case **delegates to** `structure_function`
+          (which needs only the two endpoints finite) and emits a
+          ``UserWarning`` saying so. The delegate reuses the same resolved lag
+          array, so the only difference from the wavelet path is the (more
+          correct) NaN handling.
     periodic : bool, optional
         If True, treat the domain as periodic (toroidal) along ``axis`` and use
         circular convolution, giving all L wraparound windows per lag. Unlike
@@ -107,6 +128,41 @@ def wavelet_fluctuation(data, wavelet='haar', order=1, max_sep=None, axis=0,
 
     # Process lag options (even-only wavelets keep only even lags)
     lags = process_lags(lags, max_sep, even_only=wv.even_only)
+
+    # The structure-function wavelet convolves with [1, 0, ..., 0, -1] (width
+    # r+1), but the NaN-safe validity mask requires the WHOLE window finite --
+    # including the interior zero taps the first difference never touches. So a
+    # NaN strictly between the two endpoints needlessly discards a pair that the
+    # dedicated structure_function() keeps. When NaNs are present we hand off to
+    # that function (only the two endpoints must be finite). The resolved lag
+    # array is passed through with max_sep=None so the delegate reproduces the
+    # exact same lags as the wavelet path -- including, for periodic=True, lags
+    # above L // 2 (process_lags leaves an explicit array untouched, so the
+    # periodic max_sep <= L // 2 guard is not triggered). On NaN-free data the
+    # two paths already agree, so no delegation is needed there.
+    if has_nans and wv.name == 'structure_function':
+        warnings.warn(
+            "wavelet='structure_function' on NaN-containing data: the wavelet "
+            "path flags an increment as NaN whenever its width-(r+1) convolution "
+            "window contains a NaN -- including the interior zero taps the first "
+            "difference never uses -- discarding more pairs than necessary. "
+            "Delegating to structure_function(), which averages over every pair "
+            "whose two endpoints are finite. (On NaN-free data the two paths are "
+            "identical.)",
+            UserWarning, stacklevel=2)
+        # Delegate only the *reachable* lags (lag <= max_sep). Lags whose kernel
+        # exceeds the domain are NaN in the wavelet path; structure_function
+        # would instead compute finite wraparound aliases for periodic lags >= L
+        # (roll by lag % L), so we reinstate NaN columns for them rather than
+        # pass them through. Return int64 lags to match the wavelet path exactly.
+        reachable = lags <= max_sep
+        _, sf_vals = structure_function(data, order=order, max_sep=None, axis=axis,
+                                        lags=lags[reachable], periodic=periodic)
+        out = np.full((order_arr.size, lags.size), np.nan, dtype=np.float64)
+        out[:, reachable] = np.asarray(sf_vals).reshape(order_arr.size, -1)
+        if order_is_scalar:
+            out = out[0]
+        return np.array(lags, dtype=np.int64), out
 
     flucs = np.empty((order_arr.size, lags.size), dtype=np.float64)
 

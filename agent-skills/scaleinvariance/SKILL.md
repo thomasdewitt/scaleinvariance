@@ -219,6 +219,25 @@ scaleinvariance.wavelet_fluctuation(
 Localized wavelets have kernels several times wider than `r` (`~5.8 r` Mexican
 hat, `~15 r` Morlet), so their largest reachable lag is correspondingly smaller.
 
+**NaN handling** (`nan_behavior='ignore'`) — same rule for every wavelet, and
+bit-identical to the old `haar_fluctuation`: an output position is NaN if *any*
+sample in its kernel window is NaN, then the moment is a `nanmean` over the
+survivors. Two consequences follow from the wide kernels above:
+- A single NaN poisons a span as wide as the kernel — `~r` for `haar` /
+  `structure_function`, but `~5.8 r` (Mexican hat) and `~15 r` (Morlet). Gappy
+  data therefore loses far more output to the localized wavelets than to Haar
+  at the same lag, and large lags can go entirely NaN (and thus drop out of the
+  fit) well before `r → L`.
+- `wavelet='structure_function'` would be *stricter* under NaN than the
+  dedicated `structure_function`: the validity mask counts the full width-`r+1`
+  window, including the zero taps between the two `±1` endpoints, so an interior
+  NaN would poison the output even though it is multiplied by zero. To avoid
+  silently discarding those pairs, **`wavelet_fluctuation` auto-delegates to
+  `structure_function` (with a `UserWarning`) whenever the data contains NaNs
+  and `wavelet='structure_function'`** — the dedicated function needs only the
+  two endpoints finite. Same lags, more correct NaN handling. (On clean data the
+  paths are identical and no delegation happens.)
+
 ```python
 scaleinvariance.costructure_function(
     data1, data2,            # N-dimensional arrays. Must have identical shape.
