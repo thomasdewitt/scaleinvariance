@@ -227,3 +227,20 @@ python tests/visual/test_1D_fif_structure_function.py 0.3 0.1 1.8
 - Python ≥ 3.10
 - NumPy, SciPy
 - PyTorch (optional, for simulation speedup)
+
+## Citing
+
+Every release is archived on Zenodo. Cite the concept DOI below, which always
+resolves to the most recent version; the release page carries a version-specific
+DOI if you need to pin the exact code you ran.
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21984224.svg)](https://doi.org/10.5281/zenodo.21984224)
+
+```bibtex
+@software{dewitt_scaleinvariance,
+  author  = {DeWitt, Thomas D},
+  title   = {scaleinvariance: Simulation and analysis of multifractal fields},
+  doi     = {10.5281/zenodo.21984224},
+  url     = {https://github.com/thomasdewitt/scaleinvariance}
+}
+```
