@@ -42,12 +42,12 @@ If you are attempting to analyze a large dataset that does not fit in memory, yo
 
 ### Hurst Exponent Estimation
 
-| Task                                        | Function                   | Notes                                                                                                                       |
-| ------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Recommended** cases when 0<H<1            | `structure_function_hurst` | First-order structure function scaling, robust                                                                              |
-| Wavelet-based alternative, works for -1<H<1 | `haar_fluctuation_hurst`   | Uses Haar wavelet convolution, first order                                                                                  |
-| General wavelet (choose `wavelet=`), higher H | `wavelet_fluctuation_hurst` | 'haar', 'structure_function', 'mexican_hat', 'morlet'; Mexican hat/Morlet reach higher H. Haar is the default |
-| Spectral method, works for all H            | `spectral_hurst`           | Uses power spectrum β = 2H + 1, uses second-order statistics so will not be equivalent to the above for multifractal fields |
+| Task                                          | Function                    | Notes                                                                                                                       |
+| --------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Recommended** cases when 0<H<1              | `structure_function_hurst`  | First-order structure function scaling, robust                                                                              |
+| Wavelet-based alternative, works for -1<H<1   | `haar_fluctuation_hurst`    | Uses Haar wavelet convolution, first order                                                                                  |
+| General wavelet (choose `wavelet=`), higher H | `wavelet_fluctuation_hurst` | 'haar', 'structure_function', 'mexican_hat', 'morlet'; Mexican hat/Morlet reach higher H. Haar is the default               |
+| Spectral method, works for all H              | `spectral_hurst`            | Uses power spectrum β = 2H + 1, uses second-order statistics so will not be equivalent to the above for multifractal fields |
 
 All three methods estimate the same H parameter but may give slightly different results. Structure function is recommended for most cases.
 
@@ -55,13 +55,13 @@ All three methods estimate the same H parameter but may give slightly different 
 
 **Usually, the *_hurst methods above are preferred to the functions in this section, as the spectrum/scaling function may be obtained from them using a kwarg described below**
 
-| Task                                           | Function                | Notes                                                                                         |
-| ---------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| Structure function values                      | `structure_function`    | Returns lags and S_n(r) values. `order` accepts scalar or 1-D array (vectorized over orders). |
-| Haar fluctuation values                        | `haar_fluctuation`      | Returns lags and fluctuation values. `order` accepts scalar or 1-D array.                     |
-| General wavelet fluctuation values             | `wavelet_fluctuation`   | `wavelet=`: 'haar', 'structure_function', 'mexican_hat', 'morlet'. `order` scalar or 1-D array. |
-| Mixed (two-field, two-exponent) structure fn   | `costructure_function`  | S_{p,q}(r) = <\|delta f1\|^p * \|delta f2\|^q>. Both orders accept scalar or 1-D array.      |
-| Power spectral density                         | `power_spectrum_binned` | Returns binned frequencies and PSD                                                            |
+| Task                                         | Function                | Notes                                                                                           |
+| -------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| Structure function values                    | `structure_function`    | Returns lags and S_n(r) values. `order` accepts scalar or 1-D array (vectorized over orders).   |
+| Haar fluctuation values                      | `haar_fluctuation`      | Returns lags and fluctuation values. `order` accepts scalar or 1-D array.                       |
+| General wavelet fluctuation values           | `wavelet_fluctuation`   | `wavelet=`: 'haar', 'structure_function', 'mexican_hat', 'morlet'. `order` scalar or 1-D array. |
+| Mixed (two-field, two-exponent) structure fn | `costructure_function`  | S_{p,q}(r) = <\|delta f1\|^p * \|delta f2\|^q>. Both orders accept scalar or 1-D array.         |
+| Power spectral density                       | `power_spectrum_binned` | Returns binned frequencies and PSD                                                              |
 
 **Array-order vectorization** — passing an array of orders to `structure_function`, `haar_fluctuation`, or either `order1/order2` of `costructure_function` computes the expensive per-lag work (|delta| or the Haar convolution) once and reuses it across all orders. This is substantially faster than a Python loop when scanning a range of moments.
 
@@ -75,15 +75,15 @@ All three methods estimate the same H parameter but may give slightly different 
 
 ### Simulation
 
-| Task                            | Function                               | Notes                                          |
-| ------------------------------- | -------------------------------------- | ---------------------------------------------- |
-| 1D multifractal (FIF)           | `FIF_1D`                               | Fractionally integrated flux with H, C1, alpha |
-| N-D multifractal (FIF)          | `FIF_ND`                               | 2D, 3D, etc. with GSI support                  |
-| 1D fBm (spectral)               | `fBm_1D_circulant`                     | Fast spectral synthesis, periodic              |
-| N-D fBm (spectral)              | `fBm_ND_circulant`                     | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
-| 1D fBm (fractional integration) | `fBm_1D`                               | Extended H range (-0.5, 1.5)                   |
-| Spectral fractional integration | `fractional_integral_spectral`         | Isotropic Fourier kernel, periodic, any real H |
-| Two-regime (broken) fractional integration | `broken_fractional_integral_spectral` | Two Hurst exponents joined at a wavelength |
+| Task                                       | Function                              | Notes                                          |
+| ------------------------------------------ | ------------------------------------- | ---------------------------------------------- |
+| 1D multifractal (FIF)                      | `FIF_1D`                              | Fractionally integrated flux with H, C1, alpha |
+| N-D multifractal (FIF)                     | `FIF_ND`                              | 2D, 3D, etc. with GSI support                  |
+| 1D fBm (spectral)                          | `fBm_1D_circulant`                    | Fast spectral synthesis, periodic              |
+| N-D fBm (spectral)                         | `fBm_ND_circulant`                    | 2D, 3D, 4D, etc. spectral synthesis, isotropic |
+| 1D fBm (fractional integration)            | `fBm_1D`                              | Extended H range (-0.5, 1.5)                   |
+| Spectral fractional integration            | `fractional_integral_spectral`        | Isotropic Fourier kernel, periodic, any real H |
+| Two-regime (broken) fractional integration | `broken_fractional_integral_spectral` | Two Hurst exponents joined at a wavelength     |
 
 ### Generalized Scale Invariance (GSI)
 
@@ -204,6 +204,7 @@ scaleinvariance.wavelet_fluctuation(
 **Wavelets** (`scaleinvariance.WAVELETS`): all kernels are L1-normalized
 (`sum|g_r|` fixed across scales, mean removed) so the fluctuation scales as
 `r^H` — same slope for every wavelet, different amplitude.
+
 - `haar` — difference of the means of a width-`r` window's two halves. 1
   vanishing moment (~ `0<H<1`). Even lags only.
 - `structure_function` — the first-difference "poor man's wavelet"
@@ -223,6 +224,7 @@ hat, `~15 r` Morlet), so their largest reachable lag is correspondingly smaller.
 bit-identical to the old `haar_fluctuation`: an output position is NaN if *any*
 sample in its kernel window is NaN, then the moment is a `nanmean` over the
 survivors. Two consequences follow from the wide kernels above:
+
 - A single NaN poisons a span as wide as the kernel — `~r` for `haar` /
   `structure_function`, but `~5.8 r` (Mexican hat) and `~15 r` (Morlet). Gappy
   data therefore loses far more output to the localized wavelets than to Haar
@@ -490,11 +492,6 @@ which has no closed form. The Euclidean constant is applied anyway, and the erro
 large: **at `Hz = 5/9` the realized C1 is around 4x the requested value.** Treat `C1` as
 a nominal parameter for anisotropic runs and measure the realized value from the field.
 
-Note `Omega_{D_el} / 2**D_el` is **not** the fix — it moves the constant the wrong way,
-downward, where the true rate is well above the isotropic one. Exponents that do not
-involve the cascade amplitude — H along each axis, and the shape of K(q) — are
-unaffected.
-
 ## Kernel Selection
 
 - `FIF_1D` and `FIF_ND` no longer accept the old combined `kernel_construction_method=` argument. Use `kernel_construction_method_flux=` and `kernel_construction_method_observable=` explicitly.
@@ -510,12 +507,13 @@ unaffected.
 
 These are two **orthogonal** modifiers controlled by the `causal` and `observable_kernel_odd_axes` parameters. Each accepts a bool (all axes) or a tuple of bool (per-axis). The compatibility matrix:
 
-| Modifier                       | Required observable method  | Notes                                                |
-| ------------------------------ | ---------------------------- | ---------------------------------------------------- |
-| `causal=True/tuple`            | `'LS2010'`                   | Zeros the negative-coordinate half of the kernel. Applied to **both** flux and observable kernels. Variance compensated by `2^k` for `k` causal axes (so log-flux is scaled by `(2^k · C1)^(1/α)`). |
-| `observable_kernel_odd_axes`   | `'spectral'`                 | Fourier-space phase factor `i^k · Π sign(f_j)`. Preserves the magnitude spectrum bin-by-bin (the operator is unitary on each non-DC/non-Nyquist bin). Output is normalized to zero mean / unit std rather than unit mean. |
+| Modifier                     | Required observable method | Notes                                                                                                                                                                                                                     |
+| ---------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `causal=True/tuple`          | `'LS2010'`                 | Zeros the negative-coordinate half of the kernel. Applied to **both** flux and observable kernels. Variance compensated by `2^k` for `k` causal axes (so log-flux is scaled by `(2^k · C1)^(1/α)`).                       |
+| `observable_kernel_odd_axes` | `'spectral'`               | Fourier-space phase factor `i^k · Π sign(f_j)`. Preserves the magnitude spectrum bin-by-bin (the operator is unitary on each non-DC/non-Nyquist bin). Output is normalized to zero mean / unit std rather than unit mean. |
 
 Combined:
+
 - The same axis cannot be both causal and odd.
 - `causal` + `odd` requires `LS2010` (causal) and `spectral` (odd) for the observable — incompatible. So a non-trivial combo means causal on some axes (LS2010-only) **or** odd on some axes (spectral-only), not both at once on the same call.
 - GSI / custom `scale_metric` requires LS2010 observable → cannot be combined with `observable_kernel_odd_axes`.
