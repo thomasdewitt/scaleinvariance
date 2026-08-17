@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: "DeWitt"
+    given-names: "Thomas D"
+    email: "thomas.dewitt@utah.edu"
+    orcid: "https://orcid.org/0009-0003-9591-1690"
+title: "scaleinvariance: Simulation and analysis of multifractal fields"
+version: "0.14.0"
+date-released: "2026-08-17"
+url: "https://github.com/thomasdewitt/scaleinvariance"
+repository-code: "https://github.com/thomasdewitt/scaleinvariance"
+license: MIT
+keywords:
+  - "multifractal"
+  - "scale-invariance"
+  - "turbulence"
+  - "cascade"
+  - "fractional-brownian-motion"
+  - "hurst-exponent"
+  - "structure-function"
+  - "wavelet"
+  - "python"
+abstract: >-
+  scaleinvariance provides tools for simulating and analyzing scale-invariant
+  and multifractal fields. Simulation covers fractionally integrated flux
+  (multiplicative cascades) in 1-D and N-D, fractional Brownian motion by
+  spectral synthesis and by fractional integration, and generalized scale
+  invariance for anisotropic scaling. Analysis covers Hurst exponent
+  estimation by structure functions, Haar and general wavelet fluctuations,
+  and spectra, together with intermittency estimators for the moment scaling
+  function K(q). All routines run on numpy or, optionally, torch (CPU or GPU),
+  support N-dimensional arrays, and handle both periodic and non-periodic
+  domains.

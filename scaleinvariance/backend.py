@@ -404,8 +404,21 @@ def ifftshift(x, axes=None):
 # Random Number Generation
 # ============================================================================
 
+def _as_shape(shape):
+    """Accept both randn(2, 3) and randn((2, 3)).
+
+    torch.rand/randn take either form; np.random.rand/randn take only the
+    varargs form, so the tuple form silently worked on the torch backend and
+    raised on numpy.
+    """
+    if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+        return tuple(shape[0])
+    return shape
+
+
 def randn(*shape):
     """Standard normal random numbers at the active real precision."""
+    shape = _as_shape(shape)
     if _backend == 'numpy':
         target = _active_real_dtype_np()
         result = np.random.randn(*shape)
@@ -419,6 +432,7 @@ def randn(*shape):
 
 def rand(*shape):
     """Uniform random numbers [0, 1) at the active real precision."""
+    shape = _as_shape(shape)
     if _backend == 'numpy':
         target = _active_real_dtype_np()
         result = np.random.rand(*shape)

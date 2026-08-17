@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.13.1**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.14.0**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -476,14 +476,14 @@ The broken variant uses a piecewise power-law kernel: slope `-H_large_scale` for
 
 **Overflow guard**: both functions raise `OverflowError` before allocating if the peak kernel magnitude `outer_scale ** max_positive_H` would exceed the safe range of the active real dtype. Rough ceilings with default `outer_scale`: float32 tolerates up to `H ≈ 6` at size 2^20 and `H ≈ 4` at size 2^30; float64 tolerates up to `H ≈ 51` at size 2^20. If you need larger H, call `scaleinvariance.set_numerical_precision('float64')` first. Negative H never overflows (kernel ≤ 1 at Nyquist).
 
-## N-D C1 Calibration (changed in 0.13.1)
+## N-D C1 Calibration (changed in 0.14.0)
 
 `FIF_ND` scales the flux generator by `(2**n_causal_axes * C1 / NDf)**(1/alpha)`, where
 `NDf = Omega_d / 2**d` is the angular factor the dx=2 lattice puts into the kernel's
-alpha-power log-rate: **1 in 1-D, pi/2 in 2-D and 3-D**. Releases **through 0.13.0
+alpha-power log-rate: **1 in 1-D, pi/2 in 2-D and 3-D**. Releases **through 0.11.0
 omitted it**, so every N-D FIF field they produced has an effective
 `C1 ~ 1.57 x C1_requested` at every alpha. `FIF_1D` is unaffected — it is the calibrated
-reference convention. If you are comparing against fields simulated with 0.13.0 or
+reference convention. If you are comparing against fields simulated with 0.11.0 or
 earlier, they are more intermittent than their nominal C1 says.
 
 **C1 is NOT calibrated under GSI.** `Omega_d / 2**d` is the Euclidean answer; with an

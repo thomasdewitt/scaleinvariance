@@ -4,7 +4,7 @@ The flux amplitude is set by the rate at which the kernel accumulates
 alpha-power with scale. On the dx=2 lattice that rate carries a factor
 Omega_d / 2^d (1 in 1-D, pi/2 in 2-D and 3-D), which the 1-D amplitude formula
 C1**(1/alpha) does not contain. Reusing the 1-D formula in N-D — as every
-release through 0.13.0 did — inflated the effective C1 by ~1.57x at every
+release through 0.11.0 did — inflated the effective C1 by ~1.57x at every
 alpha. Caught 2026-07-10 by cross-validation against Lovejoy's eps2D.m, whose
 NDf constant is exactly this factor.
 """
