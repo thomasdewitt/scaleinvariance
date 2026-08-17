@@ -786,19 +786,15 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     >>> # Monofractal case (C1=0 routes to fBm_ND_circulant)
     >>> fbm = FIF_ND((512, 512), alpha=1.8, C1=0, H=0.3)
     >>>
-    >>> # Using custom GSI norm (example with anisotropic scaling)
-    >>> import numpy as np
+    >>> # GSI with the canonical anisotropic metric. The last axis scales with
+    >>> # exponent Hz relative to the first, which fixes D_el = 1 + Hz in 2-D.
+    >>> from scaleinvariance import canonical_scale_metric
     >>> size = (256, 256)
     >>> sim_size = (512, 512)  # doubled for non-periodic
-    >>> # Create coordinate arrays with dx=2 spacing (to match LS2010)
-    >>> x = np.arange(-(sim_size[0]-1), sim_size[0], 2)
-    >>> y = np.arange(-(sim_size[1]-1), sim_size[1], 2)
-    >>> X, Y = np.meshgrid(x, y, indexing='ij')
-    >>> # Define anisotropic GSI metric with different scaling in x and y
-    >>> scale_metric = (X**2 + (Y/2)**2)**0.5  # y-direction scales faster
-    >>> # Use non-integer dimension for GSI
+    >>> Hz = 5/9               # atmospheric stratification
+    >>> scale_metric = canonical_scale_metric(sim_size, ls=10.0, Hz=Hz)
     >>> fif = FIF_ND(size, alpha=1.7, C1=0.1, H=0.3, periodic=False,
-    ...              scale_metric=scale_metric, elliptical_dim=2.3,
+    ...              scale_metric=scale_metric, elliptical_dim=1 + Hz,
     ...              kernel_construction_method_observable='LS2010')
 
     Notes
@@ -878,6 +874,19 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         elliptical_dim = float(ndim)
     else:
         elliptical_dim = float(elliptical_dim)
+        # D_el is the dimension of the effective space the anisotropic scaling
+        # sweeps out: 1 (all scaling in one direction) up to ndim (isotropic).
+        # Outside that range the kernel exponent -D_el/alpha' is steep enough
+        # that the LS2010 correction term goes negative near the origin, and
+        # the flux kernel's fractional power |.|^(1/(alpha-1)) then produces
+        # NaN, which the FFT spreads over the whole field.
+        if not 1.0 <= elliptical_dim <= ndim:
+            raise ValueError(
+                f"elliptical_dim must be between 1 and the number of "
+                f"dimensions ({ndim}); got {elliptical_dim}. For the canonical "
+                f"scale metric with anisotropy exponent Hz, D_el = 1 + Hz in "
+                f"2-D and 2 + Hz in 3-D."
+            )
 
     # Normalize causal / observable_kernel_odd_axes to length-ndim tuples and
     # validate that no axis is both.
@@ -1010,6 +1019,20 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     else:
         raise ValueError(f"Unknown kernel_construction_method_flux for N-D: {kernel_construction_method_flux}. "
                          "Supported: 'LS2010'.")
+
+    # The LS2010 correction term can go negative in the innermost cells when
+    # the scale metric and elliptical_dim describe different geometries; the
+    # flux kernel's fractional power then yields NaN, and a single NaN cell
+    # spreads over the whole field through the FFT. Catch it here rather than
+    # returning an all-NaN simulation.
+    if not bool(B.all(B.asarray(np.isfinite(B.to_numpy(kernel1))))):
+        raise ValueError(
+            "The flux kernel contains non-finite values. This happens when "
+            f"scale_metric and elliptical_dim ({elliptical_dim}) imply "
+            "different geometries — for the canonical scale metric with "
+            "anisotropy exponent Hz, elliptical_dim must be 1 + Hz in 2-D and "
+            "2 + Hz in 3-D."
+        )
 
     # Perform first convolution
     integrated = periodic_convolve_nd(noise, kernel1)

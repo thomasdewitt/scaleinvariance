@@ -103,3 +103,42 @@ def test_1d_flux_is_the_calibrated_reference():
 
     C1_eff = float(np.mean(estimates))
     assert 0.075 < C1_eff < 0.115, f"1-D C1_eff={C1_eff} (requested {C1})"
+
+
+@pytest.mark.parametrize("elliptical_dim", [0.5, 2.5, 3.0])
+def test_elliptical_dim_outside_1_to_ndim_raises(elliptical_dim):
+    """D_el below 1 or above ndim is incoherent, and used to yield a NaN field.
+
+    The kernel exponent -D_el/alpha_prime gets steep enough that the LS2010
+    correction term goes negative near the origin; the flux kernel's
+    |.|**(1/(alpha-1)) then produces NaN, which the FFT spreads everywhere.
+    """
+    metric = si.canonical_scale_metric((64, 64), ls=10.0, Hz=0.5)
+    with pytest.raises(ValueError, match="elliptical_dim must be between"):
+        si.FIF_ND((64, 64), alpha=1.7, C1=0.1, H=0.3, periodic=True,
+                  scale_metric=metric, elliptical_dim=elliptical_dim,
+                  kernel_construction_method_observable='LS2010')
+
+
+def test_coherent_metric_and_elliptical_dim_pairs_are_accepted():
+    """D_el is fixed by the metric: 1 + Hz in 2-D for the canonical metric.
+
+    Note the range check alone is not sufficient — an in-range D_el paired with
+    a metric that implies a different one (Hz=0.5 with D_el=2.0) is still
+    incoherent, and is caught by the non-finite kernel guard instead.
+    """
+    for Hz in (0.2, 0.5, 1.0):
+        metric = si.canonical_scale_metric((64, 64), ls=10.0, Hz=Hz)
+        out = si.FIF_ND((64, 64), alpha=1.7, C1=0.1, H=0.3, periodic=True,
+                        scale_metric=metric, elliptical_dim=1 + Hz,
+                        kernel_construction_method_observable='LS2010')
+        assert np.all(np.isfinite(si.backend.to_numpy(out))), f"Hz={Hz}"
+
+
+def test_mismatched_metric_and_elliptical_dim_raises_not_nan():
+    """Hz=0.5 implies D_el=1.5; asking for 2.0 used to return an all-NaN field."""
+    metric = si.canonical_scale_metric((64, 64), ls=10.0, Hz=0.5)
+    with pytest.raises(ValueError, match="non-finite"):
+        si.FIF_ND((64, 64), alpha=1.7, C1=0.1, H=0.3, periodic=True,
+                  scale_metric=metric, elliptical_dim=2.0,
+                  kernel_construction_method_observable='LS2010')
