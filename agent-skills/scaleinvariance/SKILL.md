@@ -5,7 +5,7 @@ description: Use when working with scaleinvariance package for multifractal fiel
 
 # scaleinvariance Package Reference
 
-Simulation and analysis tools for **multifractal fields and time series**. Version **0.13.0**.
+Simulation and analysis tools for **multifractal fields and time series**. Version **0.13.1**.
 
 **Version check**: If you happen to determine that the installed scaleinvariance version does not match the version above, this skill may be outdated. Fetch the latest skill file from https://raw.githubusercontent.com/thomasdewitt/scaleinvariance/master/agent-skills/scaleinvariance/SKILL.md and save it to your local skill folder.
 
@@ -473,6 +473,21 @@ scaleinvariance.broken_fractional_integral_spectral(
 The broken variant uses a piecewise power-law kernel: slope `-H_large_scale` for `|f| <= k_t`, slope `-H_small_scale` for `|f| > k_t`, with a continuity prefactor so the magnitude is continuous at `k_t`. Raises `ValueError` if both exponents are zero; accepts one being zero as a legitimate use (flat on one side, sloped on the other).
 
 **Overflow guard**: both functions raise `OverflowError` before allocating if the peak kernel magnitude `outer_scale ** max_positive_H` would exceed the safe range of the active real dtype. Rough ceilings with default `outer_scale`: float32 tolerates up to `H ≈ 6` at size 2^20 and `H ≈ 4` at size 2^30; float64 tolerates up to `H ≈ 51` at size 2^20. If you need larger H, call `scaleinvariance.set_numerical_precision('float64')` first. Negative H never overflows (kernel ≤ 1 at Nyquist).
+
+## N-D C1 Calibration (changed in 0.13.1)
+
+`FIF_ND` scales the flux generator by `(2**n_causal_axes * C1 / NDf)**(1/alpha)`, where
+`NDf = Omega_d / 2**d` is the angular factor the dx=2 lattice puts into the kernel's
+alpha-power log-rate: **1 in 1-D, pi/2 in 2-D and 3-D**. Releases **through 0.13.0
+omitted it**, so every N-D FIF field they produced has an effective
+`C1 ~ 1.57 x C1_requested` at every alpha. `FIF_1D` is unaffected — it is the calibrated
+reference convention. If you are comparing against fields simulated with 0.13.0 or
+earlier, they are more intermittent than their nominal C1 says.
+
+The constant is exact only for the isotropic Euclidean metric. Under GSI (custom
+`scale_metric`, or `elliptical_dim != ndim`) the true factor is the metric's own
+unit-ball measure and has no closed form; the isotropic constant is applied there too,
+so GSI C1 calibration is approximate.
 
 ## Kernel Selection
 

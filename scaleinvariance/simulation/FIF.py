@@ -10,6 +10,29 @@ from .kernels import (
 )
 from .fractional_integration import fractional_integral_spectral
 
+
+def _angular_lograte_factor(ndim):
+    """Angular factor Omega_d / 2^d in the flux kernel's alpha-power log-rate.
+
+    The flux amplitude is set by the rate at which the kernel accumulates
+    alpha-power with scale, d(sum |g|^alpha)/d(ln lam). Since
+    ``|g|^alpha ~ |r|^(-d)`` and a shell of the dx=2 lattice at radius r holds
+    ``Omega_d r^(d-1) dr / 2^d`` cells, that rate is ``Omega_d / 2^d`` times a
+    scale-independent constant: 1 in 1-D, pi/2 in 2-D, pi/2 again in 3-D
+    (``Omega_d = 2 pi^(d/2) / Gamma(d/2)``). The 1-D case is the calibrated
+    convention — amplitude ``C1**(1/alpha)`` there yields ``C1_eff = C1`` — so
+    dividing C1 by this factor calibrates every other dimension against it.
+    Identical to the ``NDf`` constant in Lovejoy's ``eps2D.m``.
+
+    Only exact for the isotropic Euclidean metric. Under GSI (a custom
+    ``scale_metric``, or ``elliptical_dim != ndim``) the shells are metric
+    level sets and the true factor is the metric's own unit-ball measure,
+    which has no closed form; the isotropic constant is applied there too.
+    """
+    from math import gamma, pi
+    return 2.0 * pi ** (ndim / 2.0) / gamma(ndim / 2.0) / 2.0 ** ndim
+
+
 def _clip_and_exp_flux(scaled, caller_name):
     """Clip the log-flux to safe exponent range for the active precision,
     warn if saturation occurred, and return ``exp(scaled)``.
@@ -996,7 +1019,15 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
     # fraction 1/2^k of its mass, so the log-flux variance drops by 1/2^k.
     # Scale up by 2^k inside the C1 factor to restore the target variance.
     causality_factor = 2.0 ** n_causal_axes
-    scaled = integrated * ((causality_factor * C1) ** (1/alpha))
+    # The intermittency accumulated per e-folding of scale — what C1
+    # parameterizes — goes as the amplitude^alpha times the rate at which the
+    # kernel accumulates alpha-power, d(sum |g|^alpha)/d(ln lam). On the dx=2
+    # lattice that rate carries a d-dimensional angular factor Omega_d / 2^d
+    # (1 in 1-D, pi/2 in both 2-D and 3-D), which the 1-D amplitude formula
+    # C1**(1/alpha) does not contain. Dividing it out calibrates C1 in every
+    # dimension; without it every N-D simulation ran ~1.57x too intermittent.
+    # This is Lovejoy's NDf in eps2D.m.
+    scaled = integrated * ((causality_factor * C1 / _angular_lograte_factor(ndim)) ** (1/alpha))
     del integrated
     flux = _clip_and_exp_flux(scaled, "FIF_ND")
     del scaled

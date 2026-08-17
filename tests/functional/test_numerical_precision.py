@@ -18,7 +18,9 @@ from scaleinvariance import (
     get_numerical_precision, set_numerical_precision,
     to_numpy,
 )
-from scaleinvariance.simulation.FIF import extremal_levy, periodic_convolve, periodic_convolve_nd
+from scaleinvariance.simulation.FIF import (
+    _angular_lograte_factor, extremal_levy, periodic_convolve, periodic_convolve_nd,
+)
 from scaleinvariance.simulation.kernels import create_kernel_LS2010
 from scaleinvariance import backend as B
 
@@ -308,18 +310,21 @@ class TestClipWarningFIF:
         return float(np.max(np.abs(to_numpy(kernel))))
 
     @staticmethod
-    def _spike_threshold(kernel_peak, C1, alpha, sign):
+    def _spike_threshold(kernel_peak, C1, alpha, sign, angular=1.0):
         """Spike magnitude placing the scaled convolution peak at the clip limit.
 
         For a single spike of magnitude V, peak of |integrated| = V * kernel_peak.
-        Threshold: V = clip_limit / (kernel_peak * C1^(1/alpha))
+        Threshold: V = clip_limit / (kernel_peak * (C1/angular)^(1/alpha))
+
+        ``angular`` is the flux amplitude's d-dimensional normalization
+        Omega_d/2^d — 1 in 1-D, pi/2 in N-D (see ``_angular_lograte_factor``).
 
         Clip limits are asymmetric (|lo| > hi), so the threshold differs
         between positive spikes (hit hi) and negative spikes (hit lo).
         """
         lo, hi = B.exp_clip_limits()
         limit = hi if sign > 0 else abs(lo)
-        return limit / (kernel_peak * C1 ** (1.0 / alpha))
+        return limit / (kernel_peak * (C1 / angular) ** (1.0 / alpha))
 
     # -- FIF_1D ---------------------------------------------------------------
 
@@ -370,7 +375,8 @@ class TestClipWarningFIF:
     @pytest.mark.parametrize("size", [(32, 32), (1024, 1024)])
     def test_FIF_ND_spike_triggers_warning(self, size, alpha, C1, sign, precision):
         kpeak = self._kernel_peak_nd(size, alpha)
-        V = self._spike_threshold(kpeak, C1, alpha, sign)
+        V = self._spike_threshold(kpeak, C1, alpha, sign,
+                                  angular=_angular_lograte_factor(len(size)))
 
         noise = np.zeros(size)
         noise[0, 0] = sign * V * 1.05
@@ -390,7 +396,8 @@ class TestClipWarningFIF:
     @pytest.mark.parametrize("size", [(32, 32), (1024, 1024)])
     def test_FIF_ND_spike_no_warning(self, size, alpha, C1, sign, precision):
         kpeak = self._kernel_peak_nd(size, alpha)
-        V = self._spike_threshold(kpeak, C1, alpha, sign)
+        V = self._spike_threshold(kpeak, C1, alpha, sign,
+                                  angular=_angular_lograte_factor(len(size)))
 
         noise = np.zeros(size)
         noise[0, 0] = sign * V * 0.95
