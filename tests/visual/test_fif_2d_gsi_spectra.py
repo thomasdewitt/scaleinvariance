@@ -27,7 +27,8 @@ lag_lo, lag_hi = 30, 100
 q_values = np.arange(0.2, 2.51, 0.2)
 
 print(f"{size}x{size} periodic, {nsims} sims, alpha={alpha}, C1={C1}, H={H}")
-print(f"GSI: Hz={Hz}, ls={ls:g}, D_el={1+Hz:.3f}; expected H_x={H:.3f}, H_z={H/Hz:.3f}")
+print(f"GSI: Hz={Hz}, ls={ls:g}, D_el={1+Hz:.3f}")
+print(f"expected H_x={H:.3f}, H_z={H/Hz:.3f}; C1_x={C1:g}, C1_z={C1/Hz:.3g}")
 
 metric = si.canonical_scale_metric((size, size), ls=ls, Hz=Hz)
 fields = np.array([
@@ -86,7 +87,10 @@ ax.plot(qs_x, Kq_x, 'o-', color='tab:blue', ms=3,
         label=f'x: C1={C1_x:.3f}, α={alpha_x:.2f}')
 ax.plot(qs_z, Kq_z, 'o-', color='tab:red', ms=3,
         label=f'z: C1={C1_z:.3f}, α={alpha_z:.2f}')
-ax.plot(q_values, K_theory, 'k--', alpha=0.6, label=f'C1={C1:g}, α={alpha:g}')
+ax.plot(q_values, K_theory, '--', color='tab:blue', alpha=0.6,
+        label=f'C1={C1:g}, α={alpha:g}')
+ax.plot(q_values, K_theory / Hz, '--', color='tab:red', alpha=0.6,
+        label=f'C1={C1/Hz:.3g}, α={alpha:g}')
 ax.set_title(f'K(q), mexican hat, lags {lag_lo}–{lag_hi}')
 ax.set_xlabel('q')
 ax.set_ylabel('K(q)')
