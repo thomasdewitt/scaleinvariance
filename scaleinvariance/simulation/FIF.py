@@ -724,7 +724,17 @@ def FIF_ND(size, alpha, C1, H, levy_noise=None, outer_scale=None, outer_scale_wi
         dimension. For canonical anisotropy with stratification exponent
         ``Hz``: ``D_el = 1 + Hz`` (2D), ``2 + Hz`` (3D), ``d - 1 + Hz``
         in d-D. If None (default), uses the spatial dimension (no
-        anisotropy correction).
+        anisotropy correction). Must lie in ``[1, ndim]``.
+
+        Note that ``C1`` is **not calibrated** for anisotropic runs: the flux
+        amplitude divides out the Euclidean angular factor ``Omega_d / 2**d``,
+        but the correct factor for an anisotropic metric is that metric's own
+        unit-ball measure, which has no closed form and depends on the
+        spheroscale as well as on ``Hz``. At ``Hz = 5/9`` the realized C1 is
+        around 4x the requested value; treat ``C1`` as nominal for anisotropic
+        runs and measure it from the field. Exponents that do not involve the
+        cascade amplitude (H along each axis, the shape of K(q)) are
+        unaffected.
     scale_metric_dim : float, optional
         **Deprecated** — renamed to ``elliptical_dim``. If both are passed,
         a ``ValueError`` is raised. ``scale_metric_dim`` will be removed in

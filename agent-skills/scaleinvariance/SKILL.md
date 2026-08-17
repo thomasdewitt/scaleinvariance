@@ -484,10 +484,16 @@ omitted it**, so every N-D FIF field they produced has an effective
 reference convention. If you are comparing against fields simulated with 0.13.0 or
 earlier, they are more intermittent than their nominal C1 says.
 
-The constant is exact only for the isotropic Euclidean metric. Under GSI (custom
-`scale_metric`, or `elliptical_dim != ndim`) the true factor is the metric's own
-unit-ball measure and has no closed form; the isotropic constant is applied there too,
-so GSI C1 calibration is approximate.
+**C1 is NOT calibrated under GSI.** `Omega_d / 2**d` is the Euclidean answer; with an
+anisotropic `scale_metric` the correct factor is the metric's own unit-ball measure,
+which has no closed form. The Euclidean constant is applied anyway, and the error is
+large: **at `Hz = 5/9` the realized C1 is around 4x the requested value.** Treat `C1` as
+a nominal parameter for anisotropic runs and measure the realized value from the field.
+
+Note `Omega_{D_el} / 2**D_el` is **not** the fix — it moves the constant the wrong way,
+downward, where the true rate is well above the isotropic one. Exponents that do not
+involve the cascade amplitude — H along each axis, and the shape of K(q) — are
+unaffected.
 
 ## Kernel Selection
 
