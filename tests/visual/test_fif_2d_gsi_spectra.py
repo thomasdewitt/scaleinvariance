@@ -20,7 +20,9 @@ ls = float(sys.argv[3]) if len(sys.argv) > 3 else 10.0
 H = float(sys.argv[4]) if len(sys.argv) > 4 else 0.3
 nsims = int(sys.argv[5]) if len(sys.argv) > 5 else 5
 
-alpha, C1 = 2, 0.1
+si.set_device('cuda')
+
+alpha, C1 = 2, 0.01
 lag_lo, lag_hi = 30, 100
 q_values = np.arange(0.2, 2.51, 0.2)
 
@@ -91,8 +93,8 @@ ax.set_ylabel('K(q)')
 ax.legend(fontsize=8)
 
 ax = axes[1, 1]
-ax.loglog(lags_x, fluct_x, color='tab:blue', label='x')
-ax.loglog(lags_z, fluct_z, color='tab:red', label='z')
+ax.loglog(lags_x, fluct_x, color='tab:blue', label=f'x: H={H_x:.3f} (expect {H:.3f})')
+ax.loglog(lags_z, fluct_z, color='tab:red', label=f'z: H={H_z:.3f} (expect {H/Hz:.3f})')
 ax.axvspan(lag_lo, lag_hi, color='k', alpha=0.12)
 ax.set_title('mexican hat fluctuation, q=1')
 ax.set_xlabel('lag')
